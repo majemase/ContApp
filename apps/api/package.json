@@ -1,0 +1,24 @@
+{
+  "name": "@contapp/api",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "node --watch --import tsx src/index.ts",
+    "start": "node --import tsx src/index.ts",
+    "db:generate": "drizzle-kit generate",
+    "typecheck": "tsc -p ."
+  },
+  "dependencies": {
+    "@contapp/shared": "workspace:*",
+    "@hono/node-server": "^2.1.6",
+    "@libsql/client": "^0.18.0",
+    "drizzle-orm": "^0.45.4",
+    "hono": "^4.13.16",
+    "tsx": "^4.23.15",
+    "zod": "^4.6.7"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.6",
+    "drizzle-kit": "^0.31.11"
+  }
+}

@@ -1,0 +1,8 @@
+packages:
+  - packages/*
+  - apps/*
+
+# Solo estos paquetes pueden ejecutar scripts al instalarse.
+# esbuild (lo usan tsx y drizzle-kit): su postinstall solo verifica el binario de la plataforma.
+allowBuilds:
+  esbuild: true
