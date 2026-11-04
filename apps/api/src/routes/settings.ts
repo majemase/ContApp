@@ -13,12 +13,16 @@ function parseRules(json: string): ExtraRule[] {
 export async function loadSettings(ledgerId: number): Promise<Settings> {
   const [row] = await db.select().from(ledgerSettings).where(eq(ledgerSettings.ledgerId, ledgerId));
   if (!row) return DEFAULT_SETTINGS;
-  const { ledgerId: _, extraRules, ...rest } = row;
-  return { ...rest, extraRules: parseRules(extraRules) };
+  const { ledgerId: _, extraRules, oneOffRules, ...rest } = row;
+  return { ...rest, extraRules: parseRules(extraRules), oneOffRules: parseRules(oneOffRules) };
 }
 
 export async function saveSettings(ledgerId: number, settings: Settings) {
-  const values = { ...settings, extraRules: JSON.stringify(settings.extraRules) };
+  const values = {
+    ...settings,
+    extraRules: JSON.stringify(settings.extraRules),
+    oneOffRules: JSON.stringify(settings.oneOffRules),
+  };
   await db
     .insert(ledgerSettings)
     .values({ ...values, ledgerId })
@@ -27,7 +31,7 @@ export async function saveSettings(ledgerId: number, settings: Settings) {
 
 /** Las huchas que se mencionan en los ajustes deben existir en el ámbito y no estar archivadas. */
 async function assertBuckets(ledgerId: number, settings: Settings) {
-  const ids = [settings.savingsBucketId, ...settings.extraRules.map((r) => r.bucketId)].filter(
+  const ids = [settings.savingsBucketId, ...[...settings.extraRules, ...settings.oneOffRules].map((r) => r.bucketId)].filter(
     (id): id is number => id !== null,
   );
   if (ids.length === 0) return;

@@ -65,7 +65,7 @@ Los importes tienen **historial con fecha de vigencia** (tarifa plana del autón
 | `recurring_expenses` | ámbito, categoría, nombre, tipo, frecuencia (meses), mes/día de cargo, inicio, fin | 1 |
 | `recurring_expense_amounts` | recurrente, importe, válido desde | 1 |
 | `expenses` | ámbito, categoría, fecha, importe, nota, impulsivo, recurrente (opcional) | 1 |
-| `incomes` | ámbito, fecha, importe, tipo (base / dietas / paga extra / atrasos / otro), mes | 2 |
+| `incomes` | ámbito, fecha, importe, tipo (nómina / dietas / paga extra / atrasos / devolución / otro) | 2 |
 | `ledger_settings` | referencia, ahorro (modo, %, mínimo, hucha), reglas del extra, objetivo de reparto, umbral salud | 2–3 |
 | `buckets` (huchas) | ámbito, nombre, icono, tipo (ahorro / emergencia / colchón / objetivo / provisión), meta, recurrente | 3 |
 | `bucket_movements` | hucha, importe ±, fecha, mes, tipo (inicial / manual / traspaso / cierre…), afecta al mes | 3 |
@@ -116,7 +116,7 @@ Objetivo: que el dinero que sobra tenga un destino.
       recibo, sale de ahí
 - [x] Reglas de reparto del extra (por defecto 40 % emergencia · 30 % colchón · 20 % ahorro · 10 % libre).
       La parte libre se suma a lo que puedes gastar ese mismo mes
-- [ ] Regla distinta para ingresos puntuales (atrasos, devoluciones): de momento usan la misma que el extra
+- [x] Reparto propio para ingresos puntuales (atrasos, devoluciones). Si no se configura, usan el del extra
 - [x] Meter / sacar dinero de una hucha en cualquier momento (desde o hacia el dinero del mes),
       traspasos entre huchas y saldo inicial
 - [x] Usar el colchón cuando un mes cobras menos que la referencia (sugerencia en el resumen)
@@ -125,7 +125,7 @@ Objetivo: que el dinero que sobra tenga un destino.
 - [x] Hucha "Regularización autónomo" (plantilla al crear una hucha)
 - [x] **Medidor de reparto** (necesidades · deseos · ahorro) frente a un objetivo configurable, en vivo
       durante el mes y guardado al cerrar
-- [ ] Evolución del medidor mes a mes (gráfica) → Fase 5
+- [x] Evolución del medidor mes a mes (en Huchas): reparto de cada mes cerrado y ahorro medio
 - [x] Invariante con tests: todo lo cobrado acaba gastado o en una hucha (`closing.test.ts`)
 
 ### Fase 4 — La SL

@@ -20,11 +20,14 @@ import {
   useCreateMovement,
   useDeleteBucket,
   useDeleteMovement,
+  useMonthCloses,
   useRecurring,
   useRestoreBucket,
+  useSettings,
   useTransfer,
   useUpdateBucket,
 } from '../api';
+import { MonthsHistory } from '../components/MonthsHistory';
 import { useConfirm, useToast } from '../components/feedback';
 import { Button, Card, EmptyState, ErrorText, Field, Input, Modal, MoneyInput, PageHeader, Select, cx } from '../components/ui';
 import { useMonthBudget } from '../hooks';
@@ -44,6 +47,8 @@ export function BucketsPage() {
   const recurring = useRecurring();
   const month = currentMonth();
   const monthState = useMonthBudget(month);
+  const closes = useMonthCloses();
+  const settings = useSettings();
   const [selected, setSelected] = useState<number | 'new' | null>(null);
 
   const all = bucketsQuery.data ?? [];
@@ -115,6 +120,13 @@ export function BucketsPage() {
           )}
           {archived.length > 0 && <ArchivedBuckets buckets={archived} />}
         </>
+      )}
+
+      {closes.data && settings.data && (
+        <section className="space-y-1">
+          <h2 className="px-1 text-sm font-semibold text-slate-600 dark:text-slate-300">Evolución</h2>
+          <MonthsHistory closes={closes.data} targetSavingsPct={settings.data.targetSavingsPct} />
+        </section>
       )}
 
       <Modal open={selected === 'new'} onClose={() => setSelected(null)} title="Nueva hucha">

@@ -53,6 +53,7 @@ const SETTINGS: Settings = {
     { bucketId: AHORRO, pct: 20 },
     { bucketId: null, pct: 10 },
   ],
+  oneOffRules: [],
   healthThresholdPct: 70,
   targetNeedsPct: 50,
   targetWantsPct: 30,
@@ -189,5 +190,46 @@ describe('monthMeter', () => {
     expect(m.wants).toBe(6000);
     expect(m.savings).toBe(140000 - 64000 - 6000);
     expect(m.pct).toEqual({ needs: 46, wants: 4, savings: 50 });
+  });
+});
+
+describe('ingresos puntuales (atrasos, devoluciones)', () => {
+  // Nómina 1.000 + dietas 400 + atrasos 600 → extra 1.000, de los que 600 son puntuales.
+  const conAtrasos = (settings: Settings) =>
+    input({
+      settings,
+      incomes: [
+        { amountCents: 100000, type: 'salary' },
+        { amountCents: 40000, type: 'allowance' },
+        { amountCents: 60000, type: 'arrears' },
+      ],
+    });
+
+  it('sin reglas propias, usan las del extra', () => {
+    const b = computeMonthBudget(conAtrasos(SETTINGS));
+    expect(b.income).toMatchObject({ extra: 100000, extraOneOff: 60000, extraFree: 10000 });
+  });
+
+  it('con reglas propias, cada parte se reparte con las suyas', () => {
+    const settings: Settings = { ...SETTINGS, oneOffRules: [{ bucketId: AHORRO, pct: 80 }, { bucketId: null, pct: 20 }] };
+    const i = conAtrasos(settings);
+    const b = computeMonthBudget(i);
+    // Libre: 10 % de 400 (regular) + 20 % de 600 (puntual)
+    expect(b.income.extraFree).toBe(4000 + 12000);
+    const extra = close(i).movements.filter((m) => m.kind === 'extra');
+    expect(extra.map((m) => [m.bucketId, m.amountCents, m.note])).toEqual([
+      [EMERGENCIA, 16000, 'Extra (40 %)'],
+      [COLCHON, 12000, 'Extra (30 %)'],
+      [AHORRO, 8000, 'Extra (20 %)'],
+      [AHORRO, 48000, 'Puntual (80 %)'],
+    ]);
+    expectMoneyBalances(i);
+  });
+
+  it('si un mes cobras menos, los atrasos completan la referencia antes de contar como extra', () => {
+    const b = computeMonthBudget(
+      input({ incomes: [{ amountCents: 90000, type: 'salary' }, { amountCents: 30000, type: 'arrears' }] }),
+    );
+    expect(b.income).toMatchObject({ base: 100000, extra: 20000, extraOneOff: 20000 });
   });
 });

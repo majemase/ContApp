@@ -84,7 +84,7 @@ export const incomes = sqliteTable(
       .references(() => ledgers.id),
     date: text('date').notNull(),
     amountCents: integer('amount_cents').notNull(),
-    type: text('type', { enum: ['salary', 'allowance', 'bonus', 'arrears', 'other'] }).notNull(),
+    type: text('type', { enum: ['salary', 'allowance', 'bonus', 'arrears', 'refund', 'other'] }).notNull(),
     note: text('note').notNull().default(''),
     createdAt: createdAt(),
   },
@@ -103,6 +103,8 @@ export const ledgerSettings = sqliteTable('ledger_settings', {
   savingsBucketId: integer('savings_bucket_id').references(() => buckets.id),
   /** JSON: [{ bucketId: number | null, pct: number }]. bucketId null = parte libre. */
   extraRules: text('extra_rules').notNull().default('[]'),
+  /** JSON, igual que extra_rules. Vacío = mismo reparto que el extra. */
+  oneOffRules: text('one_off_rules').notNull().default('[]'),
   targetNeedsPct: integer('target_needs_pct').notNull().default(50),
   targetWantsPct: integer('target_wants_pct').notNull().default(30),
   targetSavingsPct: integer('target_savings_pct').notNull().default(20),

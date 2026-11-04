@@ -24,6 +24,7 @@ const TYPE_ICONS: Record<IncomeType, string> = {
   allowance: '🧾',
   bonus: '🎁',
   arrears: '⏪',
+  refund: '↩️',
   other: '💶',
 };
 

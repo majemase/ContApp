@@ -1,0 +1,1 @@
+ALTER TABLE `ledger_settings` ADD `one_off_rules` text DEFAULT '[]' NOT NULL;

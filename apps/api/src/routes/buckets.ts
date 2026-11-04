@@ -147,7 +147,8 @@ export const bucketRoutes = new Hono<LedgerEnv>()
       throw new HttpError(400, 'Esta hucha es de una provisión: borra o finaliza el gasto recurrente');
     }
     const settings = await loadSettings(ledgerId);
-    if (settings.savingsBucketId === bucket.id || settings.extraRules.some((r) => r.bucketId === bucket.id)) {
+    const rules = [...settings.extraRules, ...settings.oneOffRules];
+    if (settings.savingsBucketId === bucket.id || rules.some((r) => r.bucketId === bucket.id)) {
       throw new HttpError(400, 'La hucha se usa en Ajustes (ahorro o reparto del extra): cámbialo primero');
     }
     const [hasMovements] = await db

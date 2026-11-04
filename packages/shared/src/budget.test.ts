@@ -48,7 +48,7 @@ const base = (over: Partial<BudgetInput> = {}): BudgetInput => ({
 describe('ingresos', () => {
   it('sin ingresos apuntados usa la referencia como estimación', () => {
     const b = computeMonthBudget(base());
-    expect(b.income).toEqual({ actual: 0, reference: 100000, base: 100000, estimated: true, extra: 0, extraFree: 0 });
+    expect(b.income).toEqual({ actual: 0, reference: 100000, base: 100000, estimated: true, extra: 0, extraOneOff: 0, extraFree: 0 });
   });
 
   it('lo cobrado por encima de la referencia es extra y no se presupuesta', () => {

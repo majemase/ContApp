@@ -43,9 +43,15 @@ export function SettingsPage() {
           </SettingsCard>
           <SettingsCard
             title="Reparto del extra"
-            description="Lo que cobras por encima de tu referencia (dietas, atrasos, pagas…). La parte libre se suma a lo que puedes gastar ese mes; el resto va a las huchas al cerrar el mes."
+            description="Lo que cobras por encima de tu referencia (dietas, pagas…). La parte libre se suma a lo que puedes gastar ese mes; el resto va a las huchas al cerrar el mes."
           >
-            <ExtraRulesForm settings={query.data} buckets={savingBuckets} />
+            <RulesForm settings={query.data} buckets={savingBuckets} field="extraRules" />
+          </SettingsCard>
+          <SettingsCard
+            title="Reparto de ingresos puntuales"
+            description="Atrasos y devoluciones (Hacienda…): dinero que no se repite. Puedes darle un reparto distinto, por ejemplo casi todo al ahorro."
+          >
+            <RulesForm settings={query.data} buckets={savingBuckets} field="oneOffRules" />
           </SettingsCard>
           <SettingsCard
             title="Objetivo de reparto"
@@ -255,14 +261,21 @@ function SavingsPreview({ settings, committed }: { settings: Settings; committed
   );
 }
 
-// ---- Reparto del extra ----
+// ---- Reparto del extra y de los ingresos puntuales ----
 
 const EXAMPLE_EXTRA = 40000;
 
-function ExtraRulesForm({ settings, buckets }: { settings: Settings; buckets: Bucket[] }) {
+type RulesField = 'extraRules' | 'oneOffRules';
+
+function RulesForm({ settings, buckets, field }: { settings: Settings; buckets: Bucket[]; field: RulesField }) {
   const { update, save } = useSaveSettings(settings);
+  const isOneOff = field === 'oneOffRules';
+  // Los puntuales sin reglas propias usan las del extra.
+  const [sameAsExtra, setSameAsExtra] = useState(isOneOff && settings.oneOffRules.length === 0);
+  const startRules = isOneOff && settings.oneOffRules.length === 0 ? settings.extraRules : settings[field];
+
   // Una fila por hucha (aunque esté a 0 %) más la parte libre.
-  const initial = (id: number | null) => String(settings.extraRules.find((r) => r.bucketId === id)?.pct ?? 0);
+  const initial = (id: number | null) => String(startRules.find((r) => r.bucketId === id)?.pct ?? 0);
   const [pcts, setPcts] = useState<Record<string, string>>(() => {
     const entries: Record<string, string> = { free: initial(null) };
     for (const b of buckets) entries[b.id] = initial(b.id);
@@ -275,44 +288,61 @@ function ExtraRulesForm({ settings, buckets }: { settings: Settings; buckets: Bu
   ];
   const value = (key: string) => Math.max(0, Math.min(100, Number(pcts[key]) || 0));
   const total = rows.reduce((s, r) => s + value(r.key), 0);
-  const valid = total === 100 || total === 0;
+  const valid = sameAsExtra || total === 100 || total === 0;
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
     if (!valid) return;
-    const extraRules: ExtraRule[] = rows
-      .filter((r) => value(r.key) > 0)
-      .map((r) => ({ bucketId: r.bucketId, pct: value(r.key) }));
-    await save({ extraRules });
+    const rules: ExtraRule[] = sameAsExtra
+      ? []
+      : rows.filter((r) => value(r.key) > 0).map((r) => ({ bucketId: r.bucketId, pct: value(r.key) }));
+    await save({ [field]: rules });
   }
 
   return (
     <form onSubmit={handleSubmit} className="space-y-3">
-      <ul className="space-y-2">
-        {rows.map((r) => (
-          <li key={r.key} className="flex items-center gap-3">
-            <span className="min-w-0 flex-1 truncate text-sm">{r.label}</span>
-            <span className="w-20 text-right text-xs text-slate-500 tabular-nums dark:text-slate-400">
-              {value(r.key) > 0 ? formatEuros(Math.round((EXAMPLE_EXTRA * value(r.key)) / 100)) : ''}
+      {isOneOff && (
+        <label className="flex items-center gap-2 text-sm">
+          <input
+            type="checkbox"
+            checked={sameAsExtra}
+            onChange={(e) => setSameAsExtra(e.target.checked)}
+            className="size-4 accent-emerald-600"
+          />
+          Usar el mismo reparto que el extra
+        </label>
+      )}
+      {!sameAsExtra && (
+        <>
+          <ul className="space-y-2">
+            {rows.map((r) => (
+              <li key={r.key} className="flex items-center gap-3">
+                <span className="min-w-0 flex-1 truncate text-sm">{r.label}</span>
+                <span className="w-20 text-right text-xs text-slate-500 tabular-nums dark:text-slate-400">
+                  {value(r.key) > 0 ? formatEuros(Math.round((EXAMPLE_EXTRA * value(r.key)) / 100)) : ''}
+                </span>
+                <div className="w-24 shrink-0">
+                  <PercentInput
+                    value={pcts[r.key] ?? '0'}
+                    onChange={(v) => setPcts({ ...pcts, [r.key]: v })}
+                    min={0}
+                    label={r.label}
+                  />
+                </div>
+              </li>
+            ))}
+          </ul>
+          <div className="flex items-center justify-between text-sm">
+            <span className="text-xs text-slate-500 dark:text-slate-400">Ejemplo con {formatEuros(EXAMPLE_EXTRA)}</span>
+            <span
+              className={cx('font-semibold tabular-nums', valid ? 'text-emerald-700 dark:text-emerald-400' : 'text-rose-600')}
+            >
+              Suma: {total} %
             </span>
-            <div className="w-24 shrink-0">
-              <PercentInput
-                value={pcts[r.key] ?? '0'}
-                onChange={(v) => setPcts({ ...pcts, [r.key]: v })}
-                min={0}
-                label={r.label}
-              />
-            </div>
-          </li>
-        ))}
-      </ul>
-      <div className="flex items-center justify-between text-sm">
-        <span className="text-xs text-slate-500 dark:text-slate-400">Ejemplo con {formatEuros(EXAMPLE_EXTRA)} de extra</span>
-        <span className={cx('font-semibold tabular-nums', valid ? 'text-emerald-700 dark:text-emerald-400' : 'text-rose-600')}>
-          Suma: {total} %
-        </span>
-      </div>
-      {!valid && <p className="text-sm text-rose-600">El reparto debe sumar 100 %.</p>}
+          </div>
+          {!valid && <p className="text-sm text-rose-600">El reparto debe sumar 100 %.</p>}
+        </>
+      )}
       <ErrorText error={update.error} />
       <Button type="submit" disabled={update.isPending || !valid} className="w-full py-2.5">
         {update.isPending ? 'Guardando…' : 'Guardar reparto'}

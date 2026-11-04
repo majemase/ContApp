@@ -1,5 +1,5 @@
-import type { MonthBudget } from './budget.ts';
-import type { Bucket, CloseMovement, Settings } from './schemas.ts';
+import { type MonthBudget, extraFreeParts } from './budget.ts';
+import { type Bucket, type CloseMovement, type ExtraRule, type Settings, oneOffRulesOf } from './schemas.ts';
 
 // ---- Medidor de reparto (necesidades / deseos / ahorro) ----
 
@@ -91,11 +91,22 @@ export function proposeClose({ budget, settings, buckets, leftoverBucketId, cove
     }
   }
 
-  const extra = budget.income.extra;
-  const bucketRules = settings.extraRules.filter((r) => r.bucketId !== null);
-  if (extra > 0 && bucketRules.length > 0) {
-    // Lo que va a huchas = extra − parte libre. Se reparte proporcionalmente y el redondeo va a la primera.
-    const toDistribute = extra - budget.income.extraFree;
+  // El extra regular y el puntual (atrasos, devoluciones) se reparten cada uno con sus reglas.
+  const { extra, extraOneOff } = budget.income;
+  const free = extraFreeParts(settings, extra, extraOneOff);
+  const parts = [
+    { amount: extra - extraOneOff, free: free.regular, rules: settings.extraRules, label: 'Extra' },
+    { amount: extraOneOff, free: free.oneOff, rules: oneOffRulesOf(settings), label: 'Puntual' },
+  ];
+  for (const part of parts) {
+    if (part.amount <= 0) continue;
+    const bucketRules = part.rules.filter((r): r is ExtraRule & { bucketId: number } => r.bucketId !== null);
+    if (bucketRules.length === 0) {
+      if (part.free === 0) problems.push('Tienes extra este mes: configura en Ajustes cómo repartirlo.');
+      continue;
+    }
+    // Lo que va a huchas = parte − su parte libre. Se reparte proporcionalmente y el redondeo va a la primera.
+    const toDistribute = part.amount - part.free;
     const rulesPct = bucketRules.reduce((s, r) => s + r.pct, 0);
     const amounts = bucketRules.map((r) => Math.floor((toDistribute * r.pct) / rulesPct));
     amounts[0]! += toDistribute - amounts.reduce((a, b) => a + b, 0);
@@ -103,11 +114,9 @@ export function proposeClose({ budget, settings, buckets, leftoverBucketId, cove
       if (!exists(r.bucketId)) {
         problems.push('Una regla del reparto del extra apunta a una hucha que ya no existe.');
       } else if (amounts[i]! > 0) {
-        movements.push({ bucketId: r.bucketId, amountCents: amounts[i]!, kind: 'extra', note: `Extra (${r.pct} %)` });
+        movements.push({ bucketId: r.bucketId, amountCents: amounts[i]!, kind: 'extra', note: `${part.label} (${r.pct} %)` });
       }
     });
-  } else if (extra > 0 && budget.income.extraFree === 0) {
-    problems.push('Tienes extra este mes: configura en Ajustes cómo repartirlo.');
   }
 
   if (budget.leftover > 0) {

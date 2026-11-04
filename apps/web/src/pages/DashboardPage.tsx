@@ -288,7 +288,14 @@ function ExtraCard({
     <Card className="space-y-2 bg-amber-50 ring-amber-200 dark:bg-amber-950/30 dark:ring-amber-900">
       <div className="flex items-center gap-3">
         <span className="text-2xl">✨</span>
-        <p className="flex-1 font-semibold">{formatEuros(budget.income.extra)} extra sobre tu referencia</p>
+        <p className="flex-1 font-semibold">
+          {formatEuros(budget.income.extra)} extra sobre tu referencia
+          {budget.income.extraOneOff > 0 && (
+            <span className="block text-xs font-normal text-slate-600 dark:text-slate-300">
+              {formatEuros(budget.income.extraOneOff)} son ingresos puntuales (atrasos, devoluciones)
+            </span>
+          )}
+        </p>
       </div>
       {!hasRules ? (
         <p className="text-sm text-slate-600 dark:text-slate-300">
@@ -303,9 +310,10 @@ function ExtraCard({
           {budget.income.extraFree > 0 && (
             <li>🎈 {formatEuros(budget.income.extraFree)} libres: ya están sumados a lo que puedes gastar</li>
           )}
-          {toBuckets.map((m) => (
-            <li key={m.bucketId}>
+          {toBuckets.map((m, i) => (
+            <li key={i}>
               {byId.get(m.bucketId)?.icon} {formatEuros(m.amountCents)} → {byId.get(m.bucketId)?.name}
+              {m.note?.startsWith('Puntual') && ' (atrasos/devoluciones)'}
               {closed ? '' : ' (al cerrar el mes)'}
             </li>
           ))}

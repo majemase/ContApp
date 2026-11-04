@@ -115,7 +115,7 @@ export interface Ledger {
 
 // ---- Ingresos ----
 
-export const INCOME_TYPES = ['salary', 'allowance', 'bonus', 'arrears', 'other'] as const;
+export const INCOME_TYPES = ['salary', 'allowance', 'bonus', 'arrears', 'refund', 'other'] as const;
 export type IncomeType = (typeof INCOME_TYPES)[number];
 
 export const INCOME_TYPE_LABELS: Record<IncomeType, string> = {
@@ -123,8 +123,12 @@ export const INCOME_TYPE_LABELS: Record<IncomeType, string> = {
   allowance: 'Dietas',
   bonus: 'Paga extra',
   arrears: 'Atrasos',
+  refund: 'Devolución',
   other: 'Otro',
 };
+
+/** Ingresos puntuales: no se repiten, así que pueden tener su propio reparto. */
+export const ONE_OFF_INCOME_TYPES: readonly IncomeType[] = ['arrears', 'refund'];
 
 export const incomeInputSchema = z.object({
   date: isoDateSchema,
@@ -168,6 +172,17 @@ export const extraRuleSchema = z.object({
 });
 export type ExtraRule = z.infer<typeof extraRuleSchema>;
 
+function checkRules(rules: ExtraRule[], path: string, what: string, ctx: z.RefinementCtx) {
+  const total = rules.reduce((a, r) => a + r.pct, 0);
+  if (rules.length > 0 && total !== 100) {
+    ctx.addIssue({ code: 'custom', path: [path], message: `El reparto ${what} suma ${total} %, debe sumar 100 %` });
+  }
+  const ids = rules.map((r) => r.bucketId);
+  if (new Set(ids).size !== ids.length) {
+    ctx.addIssue({ code: 'custom', path: [path], message: `Hay un destino repetido en el reparto ${what}` });
+  }
+}
+
 export const settingsSchema = z
   .object({
     /** Ingreso conservador con el que se presupuesta cada mes. Null = usar lo cobrado. */
@@ -181,6 +196,8 @@ export const settingsSchema = z
     savingsBucketId: z.int().positive().nullable(),
     /** Reparto de lo cobrado por encima de la referencia. Si hay reglas, deben sumar 100 %. */
     extraRules: z.array(extraRuleSchema).max(10),
+    /** Reparto de los ingresos puntuales (atrasos, devoluciones). Vacío = el mismo que el extra. */
+    oneOffRules: z.array(extraRuleSchema).max(10),
     /** % del ingreso de referencia a partir del cual lo comprometido se considera demasiado. */
     healthThresholdPct: z.int().min(1).max(100),
     /** Objetivo del medidor de reparto (necesidades / deseos / ahorro). Suman 100. */
@@ -189,14 +206,8 @@ export const settingsSchema = z
     targetSavingsPct: z.int().min(0).max(100),
   })
   .superRefine((s, ctx) => {
-    const rulesTotal = s.extraRules.reduce((a, r) => a + r.pct, 0);
-    if (s.extraRules.length > 0 && rulesTotal !== 100) {
-      ctx.addIssue({ code: 'custom', path: ['extraRules'], message: `El reparto del extra suma ${rulesTotal} %, debe sumar 100 %` });
-    }
-    const ids = s.extraRules.map((r) => r.bucketId);
-    if (new Set(ids).size !== ids.length) {
-      ctx.addIssue({ code: 'custom', path: ['extraRules'], message: 'Hay un destino repetido en el reparto del extra' });
-    }
+    checkRules(s.extraRules, 'extraRules', 'del extra', ctx);
+    checkRules(s.oneOffRules, 'oneOffRules', 'de los ingresos puntuales', ctx);
     const targetTotal = s.targetNeedsPct + s.targetWantsPct + s.targetSavingsPct;
     if (targetTotal !== 100) {
       ctx.addIssue({ code: 'custom', path: ['targetNeedsPct'], message: `El objetivo de reparto suma ${targetTotal} %, debe sumar 100 %` });
@@ -211,15 +222,21 @@ export const DEFAULT_SETTINGS: Settings = {
   savingsPct: 0,
   savingsBucketId: null,
   extraRules: [],
+  oneOffRules: [],
   healthThresholdPct: 70,
   targetNeedsPct: 50,
   targetWantsPct: 30,
   targetSavingsPct: 20,
 };
 
-/** % del extra que es "libre" (se puede gastar el mismo mes). */
-export function extraFreePct(settings: Pick<Settings, 'extraRules'>): number {
-  return settings.extraRules.find((r) => r.bucketId === null)?.pct ?? 0;
+/** Reglas que se aplican a los ingresos puntuales (las suyas o, si no hay, las del extra). */
+export function oneOffRulesOf(settings: Pick<Settings, 'extraRules' | 'oneOffRules'>): ExtraRule[] {
+  return settings.oneOffRules.length > 0 ? settings.oneOffRules : settings.extraRules;
+}
+
+/** % libre (se puede gastar el mismo mes) de un conjunto de reglas. */
+export function freePct(rules: ExtraRule[]): number {
+  return rules.find((r) => r.bucketId === null)?.pct ?? 0;
 }
 
 // ---- Huchas ----

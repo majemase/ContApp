@@ -8,7 +8,7 @@ import {
   isDueInMonth,
   monthlyCommitment,
 } from './recurring.ts';
-import { type Settings, extraFreePct } from './schemas.ts';
+import { type IncomeType, ONE_OFF_INCOME_TYPES, type Settings, freePct, oneOffRulesOf } from './schemas.ts';
 
 // Cálculo del presupuesto de un mes. Todo en céntimos.
 //
@@ -46,7 +46,7 @@ export interface BudgetInput {
   today: string;
   settings: Settings;
   /** Ingresos del mes. */
-  incomes: { amountCents: number }[];
+  incomes: { amountCents: number; type?: IncomeType }[];
   /** Gastos del mes. */
   expenses: BudgetExpense[];
   /** Todos los recurrentes del ámbito (los inactivos ese mes se ignoran). */
@@ -100,6 +100,9 @@ export interface MonthBudget {
     /** Lo cobrado por encima de la referencia (para repartir en huchas). */
     extra: number;
     /** Parte del extra que es libre y se suma a lo disponible del mes. */
+    /** Parte del extra que viene de ingresos puntuales (atrasos, devoluciones). */
+    extraOneOff: number;
+    /** Parte libre del extra (regular y puntual), que se suma a lo disponible del mes. */
     extraFree: number;
   };
   commitments: CommitmentSummary;
@@ -146,6 +149,17 @@ export interface MonthBudget {
 
 const sum = (values: number[]) => values.reduce((a, b) => a + b, 0);
 
+/** Parte libre del extra: la regular con las reglas del extra y la puntual con las suyas. */
+export function extraFreeParts(
+  settings: Pick<Settings, 'extraRules' | 'oneOffRules'>,
+  extra: number,
+  extraOneOff: number,
+): { regular: number; oneOff: number; total: number } {
+  const regular = Math.round(((extra - extraOneOff) * freePct(settings.extraRules)) / 100);
+  const oneOff = Math.round((extraOneOff * freePct(oneOffRulesOf(settings))) / 100);
+  return { regular, oneOff, total: regular + oneOff };
+}
+
 /** Ahorro del mes según el modo configurado. El % se aplica sobre el ingreso presupuestado (base). */
 export function monthlySavings(settings: Settings, base: number): number {
   const fixed = settings.minSavingsCents;
@@ -168,7 +182,10 @@ export function computeMonthBudget(input: BudgetInput): MonthBudget {
   else if (estimated) base = reference;
   else base = Math.min(actual, reference);
   const extra = reference !== null ? Math.max(0, actual - reference) : 0;
-  const extraFree = Math.round((extra * extraFreePct(settings)) / 100);
+  // El extra se cuenta primero como puntual (atrasos…): cada parte se reparte con sus reglas.
+  const oneOffIncome = sum(incomes.filter((i) => i.type && ONE_OFF_INCOME_TYPES.includes(i.type)).map((i) => i.amountCents));
+  const extraOneOff = Math.min(extra, oneOffIncome);
+  const extraFree = extraFreeParts(settings, extra, extraOneOff).total;
 
   // ---- Comprometido ----
   const commitments = commitmentSummary(recurring, month);
@@ -272,7 +289,7 @@ export function computeMonthBudget(input: BudgetInput): MonthBudget {
   else if (ratioPct !== null && ratioPct > settings.healthThresholdPct) healthStatus = 'warning';
 
   return {
-    income: { actual, reference, base, estimated, extra, extraFree },
+    income: { actual, reference, base, estimated, extra, extraOneOff, extraFree },
     commitments,
     savings,
     available,
