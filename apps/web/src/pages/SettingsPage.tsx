@@ -1,6 +1,8 @@
-import { type FormEvent, useState } from 'react';
+import { type FormEvent, type ReactNode, useState } from 'react';
 import { Link } from 'react-router';
 import {
+  type Bucket,
+  type ExtraRule,
   SAVINGS_MODES,
   SAVINGS_MODE_LABELS,
   type SavingsMode,
@@ -12,40 +14,94 @@ import {
   monthlySavings,
   parseEuros,
 } from '@contapp/shared';
-import { useRecurring, useSettings, useUpdateSettings } from '../api';
+import { useBuckets, useRecurring, useSettings, useUpdateSettings } from '../api';
 import { useToast } from '../components/feedback';
-import { Button, Card, EmptyState, ErrorText, Field, Input, MoneyInput, PageHeader, cx } from '../components/ui';
+import { Button, Card, EmptyState, ErrorText, Field, Input, MoneyInput, PageHeader, Select, cx } from '../components/ui';
 
 export function SettingsPage() {
   const query = useSettings();
+  const buckets = useBuckets();
+  const savingBuckets = (buckets.data ?? []).filter((b) => b.type !== 'provision');
 
   return (
     <>
       <PageHeader title="Ajustes" />
 
-      {query.isPending ? (
+      <Card className="divide-y divide-slate-100 p-0 dark:divide-slate-800">
+        <NavRow to="/ajustes/recurrentes" icon="🔁" label="Gastos recurrentes" hint="Casa, seguros, cuota, presupuestos…" />
+        <NavRow to="/ajustes/categorias" icon="🏷️" label="Categorías" />
+      </Card>
+
+      {query.isPending || buckets.isPending ? (
         <EmptyState>Cargando…</EmptyState>
       ) : query.error ? (
         <ErrorText error={query.error} />
       ) : (
-        <Card>
-          <SettingsForm settings={query.data} />
-        </Card>
+        <>
+          <SettingsCard title="Presupuesto del mes">
+            <BudgetForm settings={query.data} buckets={savingBuckets} />
+          </SettingsCard>
+          <SettingsCard
+            title="Reparto del extra"
+            description="Lo que cobras por encima de tu referencia (dietas, atrasos, pagas…). La parte libre se suma a lo que puedes gastar ese mes; el resto va a las huchas al cerrar el mes."
+          >
+            <ExtraRulesForm settings={query.data} buckets={savingBuckets} />
+          </SettingsCard>
+          <SettingsCard
+            title="Objetivo de reparto"
+            description="Cómo te gustaría repartir lo que cobras. El resumen y el cierre de mes comparan tu reparto real con este objetivo."
+          >
+            <TargetsForm settings={query.data} />
+          </SettingsCard>
+        </>
       )}
-
-      <Card className="p-0">
-        <Link
-          to="/ajustes/categorias"
-          className="flex items-center gap-3 px-4 py-3.5 hover:bg-slate-50 dark:hover:bg-slate-800/50"
-        >
-          <span className="text-xl">🏷️</span>
-          <span className="flex-1 font-medium">Categorías</span>
-          <span className="text-slate-400">›</span>
-        </Link>
-      </Card>
     </>
   );
 }
+
+function NavRow({ to, icon, label, hint }: { to: string; icon: string; label: string; hint?: string }) {
+  return (
+    <Link to={to} className="flex items-center gap-3 px-4 py-3.5 hover:bg-slate-50 dark:hover:bg-slate-800/50">
+      <span className="text-xl">{icon}</span>
+      <span className="flex-1">
+        <span className="block font-medium">{label}</span>
+        {hint && <span className="block text-xs text-slate-500 dark:text-slate-400">{hint}</span>}
+      </span>
+      <span className="text-slate-400">›</span>
+    </Link>
+  );
+}
+
+function SettingsCard({ title, description, children }: { title: string; description?: string; children: ReactNode }) {
+  return (
+    <Card className="space-y-4">
+      <div>
+        <h2 className="font-semibold">{title}</h2>
+        {description && <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">{description}</p>}
+      </div>
+      {children}
+    </Card>
+  );
+}
+
+/** Guarda una parte de los ajustes manteniendo el resto. */
+function useSaveSettings(settings: Settings) {
+  const update = useUpdateSettings();
+  const toast = useToast();
+  return {
+    update,
+    save: async (partial: Partial<Settings>) => {
+      try {
+        await update.mutateAsync({ ...settings, ...partial });
+        toast({ message: 'Ajustes guardados', tone: 'success' });
+      } catch {
+        // El error se muestra desde la mutación.
+      }
+    },
+  };
+}
+
+// ---- Presupuesto del mes ----
 
 const SAVINGS_HELP: Record<SavingsMode, string> = {
   fixed: 'La misma cantidad todos los meses.',
@@ -53,16 +109,16 @@ const SAVINGS_HELP: Record<SavingsMode, string> = {
   max: 'El porcentaje, pero nunca menos del mínimo. Los meses buenos ahorras más y los malos tienes un suelo.',
 };
 
-function SettingsForm({ settings }: { settings: Settings }) {
-  const update = useUpdateSettings();
+function BudgetForm({ settings, buckets }: { settings: Settings; buckets: Bucket[] }) {
+  const { update, save } = useSaveSettings(settings);
   const recurring = useRecurring();
-  const toast = useToast();
   const [reference, setReference] = useState(
     settings.referenceIncomeCents !== null ? centsToInput(settings.referenceIncomeCents) : '',
   );
   const [savingsMode, setSavingsMode] = useState<SavingsMode>(settings.savingsMode);
   const [minSavings, setMinSavings] = useState(centsToInput(settings.minSavingsCents));
   const [savingsPct, setSavingsPct] = useState(String(settings.savingsPct));
+  const [savingsBucketId, setSavingsBucketId] = useState<number | null>(settings.savingsBucketId);
   const [threshold, setThreshold] = useState(String(settings.healthThresholdPct));
   const [localError, setLocalError] = useState<string | null>(null);
 
@@ -71,11 +127,11 @@ function SettingsForm({ settings }: { settings: Settings }) {
 
   // Vista previa con lo que hay escrito ahora mismo en el formulario.
   const previewSettings: Settings = {
+    ...settings,
     referenceIncomeCents: reference.trim() === '' ? null : parseEuros(reference),
     savingsMode,
     minSavingsCents: parseEuros(minSavings) ?? 0,
     savingsPct: Math.min(100, Math.max(0, Number(savingsPct) || 0)),
-    healthThresholdPct: Number(threshold) || 70,
   };
   const committed = recurring.data ? commitmentSummary(recurring.data, currentMonth()).total : null;
 
@@ -97,12 +153,7 @@ function SettingsForm({ settings }: { settings: Settings }) {
       return setLocalError('El umbral debe estar entre 1 y 100');
     }
     setLocalError(null);
-    try {
-      await update.mutateAsync({ referenceIncomeCents, savingsMode, minSavingsCents, savingsPct: pct, healthThresholdPct });
-      toast({ message: 'Ajustes guardados', tone: 'success' });
-    } catch {
-      // El error se muestra desde la mutación.
-    }
+    await save({ referenceIncomeCents, savingsMode, minSavingsCents, savingsPct: pct, savingsBucketId, healthThresholdPct });
   }
 
   return (
@@ -112,8 +163,7 @@ function SettingsForm({ settings }: { settings: Settings }) {
         hint={
           <>
             Lo que cobras <strong>seguro</strong> cualquier mes, incluso en verano sin dietas. El mes se presupuesta
-            con esta cifra; lo que cobres por encima es <em>extra</em> y no cuenta como dinero para gastar. Si lo
-            dejas vacío, se usa todo lo cobrado.
+            con esta cifra; lo que cobres por encima es <em>extra</em>. Si lo dejas vacío, se usa todo lo cobrado.
           </>
         }
       >
@@ -122,22 +172,11 @@ function SettingsForm({ settings }: { settings: Settings }) {
 
       <fieldset className="space-y-3">
         <legend className="mb-1 text-sm font-medium text-slate-700 dark:text-slate-300">Ahorro mensual</legend>
-        <div className="grid grid-cols-3 gap-1 rounded-lg bg-slate-100 p-1 dark:bg-slate-800">
-          {SAVINGS_MODES.map((m) => (
-            <button
-              key={m}
-              type="button"
-              onClick={() => setSavingsMode(m)}
-              aria-pressed={savingsMode === m}
-              className={cx(
-                'rounded-md px-2 py-1.5 text-sm font-medium',
-                savingsMode === m ? 'bg-white shadow-sm dark:bg-slate-950' : 'text-slate-500 dark:text-slate-400',
-              )}
-            >
-              {SAVINGS_MODE_LABELS[m]}
-            </button>
-          ))}
-        </div>
+        <Segmented
+          options={SAVINGS_MODES.map((m) => ({ value: m, label: SAVINGS_MODE_LABELS[m] }))}
+          value={savingsMode}
+          onChange={setSavingsMode}
+        />
         <p className="text-xs text-slate-500 dark:text-slate-400">{SAVINGS_HELP[savingsMode]}</p>
 
         <div className="flex gap-3">
@@ -158,6 +197,10 @@ function SettingsForm({ settings }: { settings: Settings }) {
         </div>
 
         <SavingsPreview settings={previewSettings} committed={committed} />
+
+        <Field label="Hucha del ahorro mensual" hint="Al cerrar cada mes, el ahorro se mete en esta hucha.">
+          <BucketSelect buckets={buckets} value={savingsBucketId} onChange={setSavingsBucketId} />
+        </Field>
       </fieldset>
 
       <Field
@@ -172,7 +215,7 @@ function SettingsForm({ settings }: { settings: Settings }) {
       {localError && <p className="text-sm text-rose-600">{localError}</p>}
       <ErrorText error={update.error} />
       <Button type="submit" disabled={update.isPending} className="w-full py-2.5">
-        {update.isPending ? 'Guardando…' : 'Guardar ajustes'}
+        {update.isPending ? 'Guardando…' : 'Guardar'}
       </Button>
     </form>
   );
@@ -212,7 +255,209 @@ function SavingsPreview({ settings, committed }: { settings: Settings; committed
   );
 }
 
-function PercentInput({ value, onChange, min }: { value: string; onChange: (v: string) => void; min: number }) {
+// ---- Reparto del extra ----
+
+const EXAMPLE_EXTRA = 40000;
+
+function ExtraRulesForm({ settings, buckets }: { settings: Settings; buckets: Bucket[] }) {
+  const { update, save } = useSaveSettings(settings);
+  // Una fila por hucha (aunque esté a 0 %) más la parte libre.
+  const initial = (id: number | null) => String(settings.extraRules.find((r) => r.bucketId === id)?.pct ?? 0);
+  const [pcts, setPcts] = useState<Record<string, string>>(() => {
+    const entries: Record<string, string> = { free: initial(null) };
+    for (const b of buckets) entries[b.id] = initial(b.id);
+    return entries;
+  });
+
+  const rows: { key: string; bucketId: number | null; label: string }[] = [
+    ...buckets.map((b) => ({ key: String(b.id), bucketId: b.id, label: `${b.icon} ${b.name}` })),
+    { key: 'free', bucketId: null, label: '🎈 Libre (para gastar ese mes)' },
+  ];
+  const value = (key: string) => Math.max(0, Math.min(100, Number(pcts[key]) || 0));
+  const total = rows.reduce((s, r) => s + value(r.key), 0);
+  const valid = total === 100 || total === 0;
+
+  async function handleSubmit(e: FormEvent) {
+    e.preventDefault();
+    if (!valid) return;
+    const extraRules: ExtraRule[] = rows
+      .filter((r) => value(r.key) > 0)
+      .map((r) => ({ bucketId: r.bucketId, pct: value(r.key) }));
+    await save({ extraRules });
+  }
+
+  return (
+    <form onSubmit={handleSubmit} className="space-y-3">
+      <ul className="space-y-2">
+        {rows.map((r) => (
+          <li key={r.key} className="flex items-center gap-3">
+            <span className="min-w-0 flex-1 truncate text-sm">{r.label}</span>
+            <span className="w-20 text-right text-xs text-slate-500 tabular-nums dark:text-slate-400">
+              {value(r.key) > 0 ? formatEuros(Math.round((EXAMPLE_EXTRA * value(r.key)) / 100)) : ''}
+            </span>
+            <div className="w-24 shrink-0">
+              <PercentInput
+                value={pcts[r.key] ?? '0'}
+                onChange={(v) => setPcts({ ...pcts, [r.key]: v })}
+                min={0}
+                label={r.label}
+              />
+            </div>
+          </li>
+        ))}
+      </ul>
+      <div className="flex items-center justify-between text-sm">
+        <span className="text-xs text-slate-500 dark:text-slate-400">Ejemplo con {formatEuros(EXAMPLE_EXTRA)} de extra</span>
+        <span className={cx('font-semibold tabular-nums', valid ? 'text-emerald-700 dark:text-emerald-400' : 'text-rose-600')}>
+          Suma: {total} %
+        </span>
+      </div>
+      {!valid && <p className="text-sm text-rose-600">El reparto debe sumar 100 %.</p>}
+      <ErrorText error={update.error} />
+      <Button type="submit" disabled={update.isPending || !valid} className="w-full py-2.5">
+        {update.isPending ? 'Guardando…' : 'Guardar reparto'}
+      </Button>
+    </form>
+  );
+}
+
+// ---- Objetivo de reparto ----
+
+const TARGET_PRESETS: [number, number, number][] = [
+  [50, 30, 20],
+  [50, 20, 30],
+  [60, 10, 30],
+  [50, 10, 40],
+];
+
+function TargetsForm({ settings }: { settings: Settings }) {
+  const { update, save } = useSaveSettings(settings);
+  const [needs, setNeeds] = useState(String(settings.targetNeedsPct));
+  const [wants, setWants] = useState(String(settings.targetWantsPct));
+  const [savings, setSavings] = useState(String(settings.targetSavingsPct));
+  const n = Number(needs) || 0;
+  const w = Number(wants) || 0;
+  const s = Number(savings) || 0;
+  const total = n + w + s;
+
+  async function handleSubmit(e: FormEvent) {
+    e.preventDefault();
+    if (total !== 100) return;
+    await save({ targetNeedsPct: n, targetWantsPct: w, targetSavingsPct: s });
+  }
+
+  return (
+    <form onSubmit={handleSubmit} className="space-y-3">
+      <div className="flex flex-wrap gap-1.5">
+        {TARGET_PRESETS.map(([pn, pw, ps]) => {
+          const active = n === pn && w === pw && s === ps;
+          return (
+            <button
+              key={`${pn}${pw}${ps}`}
+              type="button"
+              onClick={() => {
+                setNeeds(String(pn));
+                setWants(String(pw));
+                setSavings(String(ps));
+              }}
+              className={cx(
+                'rounded-full px-3 py-1.5 text-sm tabular-nums',
+                active ? 'bg-emerald-600 text-white' : 'bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700',
+              )}
+            >
+              {pn}/{pw}/{ps}
+            </button>
+          );
+        })}
+      </div>
+      <div className="grid grid-cols-3 gap-2">
+        <Field label="Necesidades">
+          <PercentInput value={needs} onChange={setNeeds} min={0} />
+        </Field>
+        <Field label="Deseos">
+          <PercentInput value={wants} onChange={setWants} min={0} />
+        </Field>
+        <Field label="Ahorro">
+          <PercentInput value={savings} onChange={setSavings} min={0} />
+        </Field>
+      </div>
+      <p className="text-xs text-slate-500 dark:text-slate-400">
+        <strong>Necesidades</strong>: fijos, provisiones y presupuestos (casa, cuota, gasolina…).{' '}
+        <strong>Deseos</strong>: el gasto libre (ocio, caprichos, impulsivos). <strong>Ahorro</strong>: todo lo que
+        acaba en huchas.
+      </p>
+      {total !== 100 && <p className="text-sm text-rose-600">Suma {total} %: debe sumar 100 %.</p>}
+      <ErrorText error={update.error} />
+      <Button type="submit" disabled={update.isPending || total !== 100} className="w-full py-2.5">
+        {update.isPending ? 'Guardando…' : 'Guardar objetivo'}
+      </Button>
+    </form>
+  );
+}
+
+// ---- Controles ----
+
+function Segmented<T extends string>({
+  options,
+  value,
+  onChange,
+}: {
+  options: { value: T; label: string }[];
+  value: T;
+  onChange: (v: T) => void;
+}) {
+  return (
+    <div className="grid grid-cols-3 gap-1 rounded-lg bg-slate-100 p-1 dark:bg-slate-800">
+      {options.map((o) => (
+        <button
+          key={o.value}
+          type="button"
+          onClick={() => onChange(o.value)}
+          aria-pressed={value === o.value}
+          className={cx(
+            'rounded-md px-2 py-1.5 text-sm font-medium',
+            value === o.value ? 'bg-white shadow-sm dark:bg-slate-950' : 'text-slate-500 dark:text-slate-400',
+          )}
+        >
+          {o.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function BucketSelect({
+  buckets,
+  value,
+  onChange,
+}: {
+  buckets: Bucket[];
+  value: number | null;
+  onChange: (id: number | null) => void;
+}) {
+  return (
+    <Select value={value ?? ''} onChange={(e) => onChange(e.target.value ? Number(e.target.value) : null)}>
+      <option value="">Elige una hucha…</option>
+      {buckets.map((b) => (
+        <option key={b.id} value={b.id}>
+          {b.icon} {b.name}
+        </option>
+      ))}
+    </Select>
+  );
+}
+
+function PercentInput({
+  value,
+  onChange,
+  min,
+  label,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+  min: number;
+  label?: string;
+}) {
   return (
     <div className="relative">
       <Input
@@ -223,6 +468,7 @@ function PercentInput({ value, onChange, min }: { value: string; onChange: (v: s
         value={value}
         onChange={(e) => onChange(e.target.value)}
         className="pr-8"
+        aria-label={label}
       />
       <span aria-hidden className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-slate-400">
         %

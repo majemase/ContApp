@@ -1,5 +1,12 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type {
+  Bucket,
+  BucketInput,
+  BucketMovement,
+  MonthClose,
+  MonthCloseInput,
+  MovementInput,
+  TransferInput,
   AmountChangeInput,
   Category,
   CategoryInput,
@@ -119,7 +126,7 @@ export function useCreateRecurring() {
   return useLedgerMutation(
     (l, input: RecurringCreateInput) =>
       request<RecurringExpense>(`/ledgers/${l}/recurring`, { method: 'POST', body: input }),
-    (l) => [[...keys.recurring(l)]],
+    (l) => [[...keys.recurring(l)], ['ledger', l, 'buckets']],
   );
 }
 
@@ -127,14 +134,14 @@ export function useUpdateRecurring() {
   return useLedgerMutation(
     (l, { id, ...input }: RecurringUpdateInput & { id: number }) =>
       request<RecurringExpense>(`/ledgers/${l}/recurring/${id}`, { method: 'PUT', body: input }),
-    (l) => [[...keys.recurring(l)]],
+    (l) => [[...keys.recurring(l)], ['ledger', l, 'buckets']],
   );
 }
 
 export function useDeleteRecurring() {
   return useLedgerMutation(
     (l, id: number) => request<void>(`/ledgers/${l}/recurring/${id}`, { method: 'DELETE' }),
-    (l) => [[...keys.recurring(l)], [...keys.expenses(l)]],
+    (l) => [[...keys.recurring(l)], [...keys.expenses(l)], ['ledger', l, 'buckets']],
   );
 }
 
@@ -232,5 +239,118 @@ export function useUpdateSettings() {
   return useLedgerMutation(
     (l, input: Settings) => request<Settings>(`/ledgers/${l}/settings`, { method: 'PUT', body: input }),
     (l) => [[...keys.settings(l)]],
+  );
+}
+
+// ---- Huchas ----
+
+const bucketKeys = {
+  buckets: (ledgerId: number) => ['ledger', ledgerId, 'buckets'] as const,
+  movements: (ledgerId: number) => ['ledger', ledgerId, 'movements'] as const,
+  months: (ledgerId: number) => ['ledger', ledgerId, 'months'] as const,
+};
+
+/** Al mover dinero cambian saldos, movimientos y (si afecta al mes) el resumen. */
+const afterMovement = (l: number) => [[...bucketKeys.buckets(l)], [...bucketKeys.movements(l)]];
+
+export function useBuckets(includeArchived = false) {
+  const ledgerId = useLedgerId();
+  return useQuery({
+    queryKey: [...bucketKeys.buckets(ledgerId), { includeArchived }],
+    queryFn: () =>
+      request<Bucket[]>(`/ledgers/${ledgerId}/buckets${includeArchived ? '?includeArchived=true' : ''}`),
+  });
+}
+
+export function useCreateBucket() {
+  return useLedgerMutation(
+    (l, input: BucketInput) => request<Bucket>(`/ledgers/${l}/buckets`, { method: 'POST', body: input }),
+    (l) => [[...bucketKeys.buckets(l)]],
+  );
+}
+
+export function useUpdateBucket() {
+  return useLedgerMutation(
+    (l, { id, ...input }: BucketInput & { id: number }) =>
+      request<Bucket>(`/ledgers/${l}/buckets/${id}`, { method: 'PUT', body: input }),
+    (l) => [[...bucketKeys.buckets(l)]],
+  );
+}
+
+export function useDeleteBucket() {
+  return useLedgerMutation(
+    (l, id: number) => request<{ archived: boolean }>(`/ledgers/${l}/buckets/${id}`, { method: 'DELETE' }),
+    (l) => [[...bucketKeys.buckets(l)]],
+  );
+}
+
+export function useRestoreBucket() {
+  return useLedgerMutation(
+    (l, id: number) => request<Bucket>(`/ledgers/${l}/buckets/${id}/restore`, { method: 'POST' }),
+    (l) => [[...bucketKeys.buckets(l)]],
+  );
+}
+
+export function useBucketMovements(bucketId: number | null) {
+  const ledgerId = useLedgerId();
+  return useQuery({
+    queryKey: [...bucketKeys.movements(ledgerId), 'bucket', bucketId],
+    queryFn: () => request<BucketMovement[]>(`/ledgers/${ledgerId}/buckets/${bucketId}/movements`),
+    enabled: bucketId !== null,
+  });
+}
+
+/** Movimientos de todas las huchas en un mes. */
+export function useMonthMovements(month: string) {
+  const ledgerId = useLedgerId();
+  return useQuery({
+    queryKey: [...bucketKeys.movements(ledgerId), 'month', month],
+    queryFn: () => request<BucketMovement[]>(`/ledgers/${ledgerId}/movements?month=${month}`),
+  });
+}
+
+export function useCreateMovement() {
+  return useLedgerMutation(
+    (l, input: MovementInput) => request<BucketMovement>(`/ledgers/${l}/movements`, { method: 'POST', body: input }),
+    afterMovement,
+  );
+}
+
+export function useTransfer() {
+  return useLedgerMutation(
+    (l, input: TransferInput) => request<void>(`/ledgers/${l}/movements/transfer`, { method: 'POST', body: input }),
+    afterMovement,
+  );
+}
+
+export function useDeleteMovement() {
+  return useLedgerMutation(
+    (l, id: number) => request<void>(`/ledgers/${l}/movements/${id}`, { method: 'DELETE' }),
+    afterMovement,
+  );
+}
+
+// ---- Cierres de mes ----
+
+export function useMonthCloses() {
+  const ledgerId = useLedgerId();
+  return useQuery({
+    queryKey: bucketKeys.months(ledgerId),
+    queryFn: () => request<MonthClose[]>(`/ledgers/${ledgerId}/months`),
+  });
+}
+
+export function useCloseMonth() {
+  return useLedgerMutation(
+    (l, { month, ...input }: MonthCloseInput & { month: string }) =>
+      request<MonthClose>(`/ledgers/${l}/months/${month}/close`, { method: 'POST', body: input }),
+    (l) => [...afterMovement(l), [...bucketKeys.months(l)]],
+  );
+}
+
+export function useReopenMonth() {
+  return useLedgerMutation(
+    (l, month: string) => request<void>(`/ledgers/${l}/months/${month}/close`, { method: 'DELETE' }),
+    (l) => [...afterMovement(l), [...bucketKeys.months(l)]],
   );
 }

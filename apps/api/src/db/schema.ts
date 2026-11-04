@@ -1,5 +1,5 @@
 import { sql } from 'drizzle-orm';
-import { index, integer, sqliteTable, text, uniqueIndex } from 'drizzle-orm/sqlite-core';
+import { index, integer, primaryKey, sqliteTable, text, uniqueIndex } from 'drizzle-orm/sqlite-core';
 
 const createdAt = () =>
   text('created_at')
@@ -100,5 +100,71 @@ export const ledgerSettings = sqliteTable('ledger_settings', {
   savingsMode: text('savings_mode', { enum: ['fixed', 'percent', 'max'] }).notNull().default('fixed'),
   minSavingsCents: integer('min_savings_cents').notNull().default(0),
   savingsPct: integer('savings_pct').notNull().default(0),
+  savingsBucketId: integer('savings_bucket_id').references(() => buckets.id),
+  /** JSON: [{ bucketId: number | null, pct: number }]. bucketId null = parte libre. */
+  extraRules: text('extra_rules').notNull().default('[]'),
+  targetNeedsPct: integer('target_needs_pct').notNull().default(50),
+  targetWantsPct: integer('target_wants_pct').notNull().default(30),
+  targetSavingsPct: integer('target_savings_pct').notNull().default(20),
   healthThresholdPct: integer('health_threshold_pct').notNull().default(70),
 });
+
+export const buckets = sqliteTable('buckets', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  ledgerId: integer('ledger_id')
+    .notNull()
+    .references(() => ledgers.id),
+  name: text('name').notNull(),
+  icon: text('icon').notNull().default(''),
+  type: text('type', { enum: ['savings', 'emergency', 'cushion', 'goal', 'provision'] }).notNull(),
+  targetCents: integer('target_cents'),
+  /** Solo en huchas de provisión: el gasto recurrente que alimentan. */
+  recurringExpenseId: integer('recurring_expense_id')
+    .unique()
+    .references(() => recurringExpenses.id, { onDelete: 'set null' }),
+  archived: integer('archived', { mode: 'boolean' }).notNull().default(false),
+  createdAt: createdAt(),
+});
+
+export const bucketMovements = sqliteTable(
+  'bucket_movements',
+  {
+    id: integer('id').primaryKey({ autoIncrement: true }),
+    ledgerId: integer('ledger_id')
+      .notNull()
+      .references(() => ledgers.id),
+    bucketId: integer('bucket_id')
+      .notNull()
+      .references(() => buckets.id),
+    /** Positivo = entra en la hucha; negativo = sale. */
+    amountCents: integer('amount_cents').notNull(),
+    date: text('date').notNull(),
+    month: text('month'),
+    kind: text('kind', {
+      enum: ['initial', 'manual', 'transfer', 'savings', 'provision', 'provision_payment', 'extra', 'leftover', 'cover'],
+    }).notNull(),
+    affectsBudget: integer('affects_budget', { mode: 'boolean' }).notNull().default(false),
+    note: text('note').notNull().default(''),
+    /** Une los dos movimientos de un traspaso entre huchas. */
+    groupId: text('group_id'),
+    createdAt: createdAt(),
+  },
+  (t) => [index('movements_bucket').on(t.bucketId), index('movements_ledger_month').on(t.ledgerId, t.month)],
+);
+
+/** Meses cerrados, con la foto del medidor de reparto. */
+export const monthCloses = sqliteTable(
+  'month_closes',
+  {
+    ledgerId: integer('ledger_id')
+      .notNull()
+      .references(() => ledgers.id),
+    month: text('month').notNull(),
+    closedAt: createdAt(),
+    incomeCents: integer('income_cents').notNull(),
+    needsCents: integer('needs_cents').notNull(),
+    wantsCents: integer('wants_cents').notNull(),
+    savingsCents: integer('savings_cents').notNull(),
+  },
+  (t) => [primaryKey({ columns: [t.ledgerId, t.month] })],
+);

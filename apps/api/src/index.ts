@@ -11,9 +11,11 @@ import { db, initDb } from './db/client.ts';
 import { seedIfEmpty } from './db/seed.ts';
 import { ledgers } from './db/schema.ts';
 import { HttpError, type LedgerEnv } from './http.ts';
+import { bucketRoutes, ensureDefaultBuckets, movementRoutes } from './routes/buckets.ts';
 import { categoryRoutes } from './routes/categories.ts';
 import { expenseRoutes } from './routes/expenses.ts';
 import { incomeRoutes } from './routes/incomes.ts';
+import { monthRoutes } from './routes/months.ts';
 import { recurringRoutes } from './routes/recurring.ts';
 import { settingsRoutes } from './routes/settings.ts';
 
@@ -31,7 +33,10 @@ const ledgerScoped = new Hono<LedgerEnv>()
   .route('/recurring', recurringRoutes)
   .route('/expenses', expenseRoutes)
   .route('/incomes', incomeRoutes)
-  .route('/settings', settingsRoutes);
+  .route('/settings', settingsRoutes)
+  .route('/buckets', bucketRoutes)
+  .route('/movements', movementRoutes)
+  .route('/months', monthRoutes);
 
 const api = new Hono()
   .get('/health', (c) => c.json({ ok: true }))
@@ -68,6 +73,9 @@ if (process.env.NODE_ENV === 'production' && existsSync(webDist)) {
 
 await initDb();
 await seedIfEmpty();
+for (const { id } of await db.select({ id: ledgers.id }).from(ledgers)) {
+  await ensureDefaultBuckets(id);
+}
 
 const port = Number(process.env.PORT ?? 3001);
 serve({ fetch: app.fetch, port }, () => console.log(`API en http://localhost:${port}`));

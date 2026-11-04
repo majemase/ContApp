@@ -1,4 +1,5 @@
 import { type FormEvent, type ReactNode, useState } from 'react';
+import { Link } from 'react-router';
 import {
   type Category,
   FREQUENCY_LABELS,
@@ -76,6 +77,9 @@ export function RecurringPage() {
 
   return (
     <>
+      <Link to="/ajustes" className="-mb-2 inline-block text-sm text-emerald-600 dark:text-emerald-400">
+        ‹ Ajustes
+      </Link>
       <PageHeader title="Recurrentes" action={<Button onClick={() => setEditing('new')}>+ Nuevo</Button>} />
 
       <Card>

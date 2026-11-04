@@ -3,3 +3,4 @@ export * from './dates.ts';
 export * from './recurring.ts';
 export * from './schemas.ts';
 export * from './budget.ts';
+export * from './closing.ts';

@@ -6,7 +6,7 @@ import {
   computeMonthBudget,
   monthlySavings,
 } from './budget.ts';
-import type { Settings } from './schemas.ts';
+import { DEFAULT_SETTINGS, type Settings } from './schemas.ts';
 
 const rec = (r: Partial<BudgetRecurring> & Pick<BudgetRecurring, 'id' | 'type'>, amount: number): BudgetRecurring => ({
   name: `r${r.id}`,
@@ -38,7 +38,7 @@ const gasto = (amountCents: number, extra: Partial<BudgetExpense> = {}): BudgetE
 const base = (over: Partial<BudgetInput> = {}): BudgetInput => ({
   month: '2026-11',
   today: '2026-11-11',
-  settings: { referenceIncomeCents: 100000, savingsMode: 'fixed', minSavingsCents: 5000, savingsPct: 0, healthThresholdPct: 70 },
+  settings: { ...DEFAULT_SETTINGS, referenceIncomeCents: 100000, minSavingsCents: 5000 },
   incomes: [],
   expenses: [],
   recurring: [CASA, SEGURO, GASOLINA],
@@ -48,7 +48,7 @@ const base = (over: Partial<BudgetInput> = {}): BudgetInput => ({
 describe('ingresos', () => {
   it('sin ingresos apuntados usa la referencia como estimación', () => {
     const b = computeMonthBudget(base());
-    expect(b.income).toEqual({ actual: 0, reference: 100000, base: 100000, estimated: true, extra: 0 });
+    expect(b.income).toEqual({ actual: 0, reference: 100000, base: 100000, estimated: true, extra: 0, extraFree: 0 });
   });
 
   it('lo cobrado por encima de la referencia es extra y no se presupuesta', () => {
@@ -65,7 +65,7 @@ describe('ingresos', () => {
 
   it('sin referencia, se usa todo lo cobrado', () => {
     const b = computeMonthBudget(
-      base({ settings: { referenceIncomeCents: null, savingsMode: 'fixed', minSavingsCents: 0, savingsPct: 0, healthThresholdPct: 70 }, incomes: [{ amountCents: 150000 }] }),
+      base({ settings: { ...DEFAULT_SETTINGS }, incomes: [{ amountCents: 150000 }] }),
     );
     expect(b.income.base).toBe(150000);
     expect(b.income.extra).toBe(0);
@@ -162,11 +162,11 @@ describe('salud del presupuesto', () => {
 
 describe('ahorro', () => {
   const ajustes = (over: Partial<Settings>): Settings => ({
+    ...DEFAULT_SETTINGS,
     referenceIncomeCents: 100000,
     savingsMode: 'fixed',
     minSavingsCents: 5000,
     savingsPct: 15,
-    healthThresholdPct: 70,
     ...over,
   });
 

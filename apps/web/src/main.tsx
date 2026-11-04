@@ -6,7 +6,9 @@ import { Layout } from './components/Layout';
 import './index.css';
 import { LedgerProvider } from './ledger';
 import { FeedbackProvider } from './components/feedback';
+import { BucketsPage } from './pages/BucketsPage';
 import { CategoriesPage } from './pages/CategoriesPage';
+import { ClosePage } from './pages/ClosePage';
 import { DashboardPage } from './pages/DashboardPage';
 import { ExpensesPage } from './pages/ExpensesPage';
 import { IncomesPage } from './pages/IncomesPage';
@@ -28,7 +30,10 @@ createRoot(document.getElementById('root')!).render(
                 <Route index element={<DashboardPage />} />
                 <Route path="gastos" element={<ExpensesPage />} />
                 <Route path="ingresos" element={<IncomesPage />} />
-                <Route path="recurrentes" element={<RecurringPage />} />
+                <Route path="huchas" element={<BucketsPage />} />
+                <Route path="cerrar/:mes" element={<ClosePage />} />
+                <Route path="ajustes/recurrentes" element={<RecurringPage />} />
+                <Route path="recurrentes" element={<Navigate to="/ajustes/recurrentes" replace />} />
                 <Route path="ajustes" element={<SettingsPage />} />
                 <Route path="ajustes/categorias" element={<CategoriesPage />} />
                 <Route path="*" element={<Navigate to="/" replace />} />

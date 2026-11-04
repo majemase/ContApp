@@ -66,10 +66,10 @@ Los importes tienen **historial con fecha de vigencia** (tarifa plana del autón
 | `recurring_expense_amounts` | recurrente, importe, válido desde | 1 |
 | `expenses` | ámbito, categoría, fecha, importe, nota, impulsivo, recurrente (opcional) | 1 |
 | `incomes` | ámbito, fecha, importe, tipo (base / dietas / paga extra / atrasos / otro), mes | 2 |
-| `ledger_settings` | ingreso de referencia, ahorro mínimo, umbral salud (y reglas de reparto en la fase 3) | 2–3 |
-| `buckets` (huchas) | ámbito, nombre, tipo (emergencia / colchón / provisión / objetivo), meta, prioridad | 3 |
-| `bucket_movements` | hucha, importe ±, fecha, motivo (reparto extra / cierre / manual / pago provisión) | 3 |
-| `months` | año-mes, estado (abierto / cerrado), resumen | 3 |
+| `ledger_settings` | referencia, ahorro (modo, %, mínimo, hucha), reglas del extra, objetivo de reparto, umbral salud | 2–3 |
+| `buckets` (huchas) | ámbito, nombre, icono, tipo (ahorro / emergencia / colchón / objetivo / provisión), meta, recurrente | 3 |
+| `bucket_movements` | hucha, importe ±, fecha, mes, tipo (inicial / manual / traspaso / cierre…), afecta al mes | 3 |
+| `month_closes` | mes cerrado + foto del medidor (ingresos, necesidades, deseos, ahorro) | 3 |
 | `ledger_transfers` | ámbito origen, destino, importe, tipo (capital / sueldo / préstamo socio) | 4 |
 
 ---
@@ -110,15 +110,23 @@ Objetivo: saber en todo momento cuánto puedo gastar.
 ### Fase 3 — Las huchas
 Objetivo: que el dinero que sobra tenga un destino.
 
-- [ ] Huchas: fondo de emergencia, colchón de verano, provisiones, objetivos con meta
-- [ ] Reglas de reparto del extra y de los ingresos puntuales
-- [ ] Provisiones automáticas: lo prorrateado va a su hucha; al pagar el seguro sale de ahí
-- [ ] Mover dinero a una hucha en cualquier momento
-- [ ] **Cierre de mes**: resumen + propuesta de reparto del sobrante (o cubrir el exceso desde el colchón)
-- [ ] Hucha "Regularización autónomo"
-- [ ] **Medidor de reparto** al cerrar el mes: necesidades (fijos + provisiones + variables) · deseos
-      (gasto libre) · ahorro (todo lo que acaba en huchas), frente a un objetivo **configurable**
-      (50/30/20 por defecto; la idea es ahorrar más del 20 % recortando deseos) y su evolución mes a mes
+- [x] Huchas: fondo de emergencia, colchón de verano, ahorro y objetivos con meta (se crean las tres
+      primeras por defecto). El fondo de emergencia sugiere como meta 3 meses de gastos comprometidos
+- [x] Cada provisión tiene su hucha automática: lo prorrateado entra al cerrar el mes; al pagar el
+      recibo, sale de ahí
+- [x] Reglas de reparto del extra (por defecto 40 % emergencia · 30 % colchón · 20 % ahorro · 10 % libre).
+      La parte libre se suma a lo que puedes gastar ese mismo mes
+- [ ] Regla distinta para ingresos puntuales (atrasos, devoluciones): de momento usan la misma que el extra
+- [x] Meter / sacar dinero de una hucha en cualquier momento (desde o hacia el dinero del mes),
+      traspasos entre huchas y saldo inicial
+- [x] Usar el colchón cuando un mes cobras menos que la referencia (sugerencia en el resumen)
+- [x] **Cierre de mes**: propuesta de movimientos (ahorro, provisiones, extra, sobrante o cubrir el
+      exceso), avisos de pagos sin marcar, y se puede reabrir. Aviso si el mes anterior está sin cerrar
+- [x] Hucha "Regularización autónomo" (plantilla al crear una hucha)
+- [x] **Medidor de reparto** (necesidades · deseos · ahorro) frente a un objetivo configurable, en vivo
+      durante el mes y guardado al cerrar
+- [ ] Evolución del medidor mes a mes (gráfica) → Fase 5
+- [x] Invariante con tests: todo lo cobrado acaba gastado o en una hucha (`closing.test.ts`)
 
 ### Fase 4 — La SL
 Objetivo: controlar el dinero de la SL sin mezclarlo con el personal.

@@ -8,14 +8,16 @@ import {
   isDueInMonth,
   monthlyCommitment,
 } from './recurring.ts';
-import type { Settings } from './schemas.ts';
+import { type Settings, extraFreePct } from './schemas.ts';
 
 // Cálculo del presupuesto de un mes. Todo en céntimos.
 //
 //   base        = ingreso de referencia (o lo cobrado, si es menos)
 //   ahorro      = importe fijo, % de la base, o lo mayor de los dos (según ajustes)
-//   disponible  = base − fijos − provisiones − variables − ahorro
+//   disponible  = base + parte libre del extra − fijos − provisiones − variables − ahorro
 //   restante    = disponible − gasto libre − excesos de variables − sobrecostes de fijos
+//                 − dinero movido a huchas durante el mes (+ lo sacado de ellas)
+//   sobrante    = restante + lo no gastado de los presupuestos variables (va a huchas al cerrar)
 //
 // Cómo cuenta cada gasto:
 // - Vinculado a un fijo: ya está en lo comprometido; solo cuenta lo que supere el importe previsto.
@@ -49,6 +51,17 @@ export interface BudgetInput {
   expenses: BudgetExpense[];
   /** Todos los recurrentes del ámbito (los inactivos ese mes se ignoran). */
   recurring: BudgetRecurring[];
+  /** Movimientos de huchas de este mes que afectan al disponible (+ entra en la hucha, − sale). */
+  budgetMovements?: { amountCents: number }[];
+}
+
+export interface ProvisionStatus {
+  id: number;
+  name: string;
+  /** Lo que se aparta este mes. */
+  setAside: number;
+  /** Lo pagado este mes (sale de su hucha). */
+  paid: number;
 }
 
 export interface VariableStatus {
@@ -86,11 +99,15 @@ export interface MonthBudget {
     estimated: boolean;
     /** Lo cobrado por encima de la referencia (para repartir en huchas). */
     extra: number;
+    /** Parte del extra que es libre y se suma a lo disponible del mes. */
+    extraFree: number;
   };
   commitments: CommitmentSummary;
   /** Ahorro que se aparta este mes. */
   savings: number;
   available: number;
+  /** Lo que hay para gastar este mes: disponible − lo metido en huchas + lo sacado de ellas. */
+  spendable: number;
   spent: {
     /** Gastos sin vínculo a recurrentes ni presupuestos. */
     free: number;
@@ -100,8 +117,14 @@ export interface MonthBudget {
     fromProvisions: number;
     /** Todo lo gastado en el mes, cuente o no contra el disponible. */
     total: number;
+    /** Neto movido a huchas durante el mes desde lo disponible (negativo si se ha sacado). */
+    toBuckets: number;
   };
   remaining: number;
+  /** Lo no gastado de los presupuestos variables (no está en el restante, pero sobra). */
+  variableSurplus: number;
+  /** Lo que sobra (o falta, si es negativo) al acabar el mes: restante + variableSurplus. */
+  leftover: number;
   /** Días que quedan incluyendo hoy. Null en meses pasados. */
   daysLeft: number | null;
   dailyAllowance: number | null;
@@ -117,6 +140,7 @@ export interface MonthBudget {
     status: HealthStatus;
   };
   variables: VariableStatus[];
+  provisions: ProvisionStatus[];
   dues: DueStatus[];
 }
 
@@ -132,7 +156,7 @@ export function monthlySavings(settings: Settings, base: number): number {
 }
 
 export function computeMonthBudget(input: BudgetInput): MonthBudget {
-  const { month, today, settings, incomes, expenses, recurring } = input;
+  const { month, today, settings, incomes, expenses, recurring, budgetMovements = [] } = input;
   const monthEnd = monthBounds(month).end;
 
   // ---- Ingresos ----
@@ -144,11 +168,12 @@ export function computeMonthBudget(input: BudgetInput): MonthBudget {
   else if (estimated) base = reference;
   else base = Math.min(actual, reference);
   const extra = reference !== null ? Math.max(0, actual - reference) : 0;
+  const extraFree = Math.round((extra * extraFreePct(settings)) / 100);
 
   // ---- Comprometido ----
   const commitments = commitmentSummary(recurring, month);
   const savings = monthlySavings(settings, base);
-  const available = base - commitments.total - savings;
+  const available = base + extraFree - commitments.total - savings;
 
   // ---- Clasificación de gastos ----
   const active = recurring.filter((r) => monthlyCommitment(r, month) > 0);
@@ -208,7 +233,13 @@ export function computeMonthBudget(input: BudgetInput): MonthBudget {
     .sort((a, b) => (a.dueDay ?? 99) - (b.dueDay ?? 99) || a.name.localeCompare(b.name));
   const fixedOverrun = sum(dues.filter((d) => d.type === 'fixed').map((d) => Math.max(0, d.paid - d.amount)));
 
-  const remaining = available - free - variableOverspend - fixedOverrun;
+  const toBuckets = sum(budgetMovements.map((m) => m.amountCents));
+  const remaining = available - free - variableOverspend - fixedOverrun - toBuckets;
+  const variableSurplus = sum(variables.map((v) => Math.max(0, v.budget - v.spent)));
+
+  const provisions: ProvisionStatus[] = active
+    .filter((r) => r.type === 'provision')
+    .map((r) => ({ id: r.id, name: r.name, setAside: monthlyCommitment(r, month), paid: linkedSpent.get(r.id) ?? 0 }));
 
   // ---- Días restantes y ritmo ----
   const days = daysInMonth(month);
@@ -227,9 +258,11 @@ export function computeMonthBudget(input: BudgetInput): MonthBudget {
   const dailyAllowance = daysLeft === null ? null : Math.max(0, Math.floor(remaining / daysLeft));
 
   const counted = free + variableOverspend + fixedOverrun;
-  const expected = Math.round(Math.max(0, available) * elapsedRatio);
+  // Lo que hay para gastar este mes: lo disponible menos lo metido en huchas (más lo sacado de ellas).
+  const spendable = available - toBuckets;
+  const expected = Math.round(Math.max(0, spendable) * elapsedRatio);
   let paceStatus: PaceStatus = 'none';
-  if (month === currentMonth && available > 0) paceStatus = counted > expected ? 'over' : 'ok';
+  if (month === currentMonth && spendable > 0) paceStatus = counted > expected ? 'over' : 'ok';
 
   // ---- Salud ----
   const healthBase = reference ?? (actual > 0 ? actual : null);
@@ -239,23 +272,28 @@ export function computeMonthBudget(input: BudgetInput): MonthBudget {
   else if (ratioPct !== null && ratioPct > settings.healthThresholdPct) healthStatus = 'warning';
 
   return {
-    income: { actual, reference, base, estimated, extra },
+    income: { actual, reference, base, estimated, extra, extraFree },
     commitments,
     savings,
     available,
+    spendable,
     spent: {
       free,
       variableOverspend,
       fixedOverrun,
       fromProvisions,
       total: sum(expenses.map((e) => e.amountCents)),
+      toBuckets,
     },
     remaining,
+    variableSurplus,
+    leftover: remaining + variableSurplus,
     daysLeft,
     dailyAllowance,
     pace: { expected, status: paceStatus },
     health: { ratioPct, thresholdPct: settings.healthThresholdPct, status: healthStatus },
     variables,
+    provisions,
     dues,
   };
 }

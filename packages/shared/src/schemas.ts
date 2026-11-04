@@ -161,17 +161,47 @@ export const SAVINGS_MODE_LABELS: Record<SavingsMode, string> = {
   max: 'Lo mayor',
 };
 
-export const settingsSchema = z.object({
-  /** Ingreso conservador con el que se presupuesta cada mes. Null = usar lo cobrado. */
-  referenceIncomeCents: z.int().positive().nullable(),
-  savingsMode: z.enum(SAVINGS_MODES),
-  /** Importe fijo de ahorro mensual (modos fixed y max). */
-  minSavingsCents: z.int().min(0),
-  /** % del ingreso presupuestado que se ahorra (modos percent y max). */
-  savingsPct: z.int().min(0).max(100),
-  /** % del ingreso de referencia a partir del cual lo comprometido se considera demasiado. */
-  healthThresholdPct: z.int().min(1).max(100),
+/** Regla de reparto del extra: un % a una hucha, o a "libre" (bucketId null) para gastar ese mes. */
+export const extraRuleSchema = z.object({
+  bucketId: z.int().positive().nullable(),
+  pct: z.int().min(1).max(100),
 });
+export type ExtraRule = z.infer<typeof extraRuleSchema>;
+
+export const settingsSchema = z
+  .object({
+    /** Ingreso conservador con el que se presupuesta cada mes. Null = usar lo cobrado. */
+    referenceIncomeCents: z.int().positive().nullable(),
+    savingsMode: z.enum(SAVINGS_MODES),
+    /** Importe fijo de ahorro mensual (modos fixed y max). */
+    minSavingsCents: z.int().min(0),
+    /** % del ingreso presupuestado que se ahorra (modos percent y max). */
+    savingsPct: z.int().min(0).max(100),
+    /** Hucha a la que va el ahorro mensual al cerrar el mes. */
+    savingsBucketId: z.int().positive().nullable(),
+    /** Reparto de lo cobrado por encima de la referencia. Si hay reglas, deben sumar 100 %. */
+    extraRules: z.array(extraRuleSchema).max(10),
+    /** % del ingreso de referencia a partir del cual lo comprometido se considera demasiado. */
+    healthThresholdPct: z.int().min(1).max(100),
+    /** Objetivo del medidor de reparto (necesidades / deseos / ahorro). Suman 100. */
+    targetNeedsPct: z.int().min(0).max(100),
+    targetWantsPct: z.int().min(0).max(100),
+    targetSavingsPct: z.int().min(0).max(100),
+  })
+  .superRefine((s, ctx) => {
+    const rulesTotal = s.extraRules.reduce((a, r) => a + r.pct, 0);
+    if (s.extraRules.length > 0 && rulesTotal !== 100) {
+      ctx.addIssue({ code: 'custom', path: ['extraRules'], message: `El reparto del extra suma ${rulesTotal} %, debe sumar 100 %` });
+    }
+    const ids = s.extraRules.map((r) => r.bucketId);
+    if (new Set(ids).size !== ids.length) {
+      ctx.addIssue({ code: 'custom', path: ['extraRules'], message: 'Hay un destino repetido en el reparto del extra' });
+    }
+    const targetTotal = s.targetNeedsPct + s.targetWantsPct + s.targetSavingsPct;
+    if (targetTotal !== 100) {
+      ctx.addIssue({ code: 'custom', path: ['targetNeedsPct'], message: `El objetivo de reparto suma ${targetTotal} %, debe sumar 100 %` });
+    }
+  });
 export type Settings = z.infer<typeof settingsSchema>;
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -179,5 +209,148 @@ export const DEFAULT_SETTINGS: Settings = {
   savingsMode: 'fixed',
   minSavingsCents: 0,
   savingsPct: 0,
+  savingsBucketId: null,
+  extraRules: [],
   healthThresholdPct: 70,
+  targetNeedsPct: 50,
+  targetWantsPct: 30,
+  targetSavingsPct: 20,
 };
+
+/** % del extra que es "libre" (se puede gastar el mismo mes). */
+export function extraFreePct(settings: Pick<Settings, 'extraRules'>): number {
+  return settings.extraRules.find((r) => r.bucketId === null)?.pct ?? 0;
+}
+
+// ---- Huchas ----
+
+export const BUCKET_TYPES = ['savings', 'emergency', 'cushion', 'goal', 'provision'] as const;
+export type BucketType = (typeof BUCKET_TYPES)[number];
+
+export const BUCKET_TYPE_LABELS: Record<BucketType, string> = {
+  savings: 'Ahorro',
+  emergency: 'Fondo de emergencia',
+  cushion: 'Colchón',
+  goal: 'Objetivo',
+  provision: 'Provisión',
+};
+
+export const bucketInputSchema = z.object({
+  name: z.string().trim().min(1, 'Pon un nombre').max(40),
+  icon: z.string().max(8).default(''),
+  type: z.enum(BUCKET_TYPES).exclude(['provision']),
+  targetCents: z.int().positive().nullable().default(null),
+});
+export type BucketInput = z.input<typeof bucketInputSchema>;
+
+export interface Bucket {
+  id: number;
+  ledgerId: number;
+  name: string;
+  icon: string;
+  type: BucketType;
+  targetCents: number | null;
+  /** Gasto recurrente asociado (solo en huchas de provisión). */
+  recurringExpenseId: number | null;
+  archived: boolean;
+  /** Saldo: suma de todos sus movimientos. */
+  balanceCents: number;
+}
+
+/**
+ * Tipos de movimiento:
+ * - initial: saldo inicial (dinero que ya tenías ahorrado). No afecta al mes.
+ * - manual: meter/sacar dinero. Si `affectsBudget`, sale de / vuelve a lo disponible del mes.
+ * - transfer: de una hucha a otra (dos movimientos). No afecta al mes.
+ * - Generados al cerrar un mes: savings, provision, provision_payment, extra, leftover, cover.
+ */
+export const MOVEMENT_KINDS = [
+  'initial',
+  'manual',
+  'transfer',
+  'savings',
+  'provision',
+  'provision_payment',
+  'extra',
+  'leftover',
+  'cover',
+] as const;
+export type MovementKind = (typeof MOVEMENT_KINDS)[number];
+
+export const CLOSE_MOVEMENT_KINDS = ['savings', 'provision', 'provision_payment', 'extra', 'leftover', 'cover'] as const;
+export type CloseMovementKind = (typeof CLOSE_MOVEMENT_KINDS)[number];
+
+export const MOVEMENT_KIND_LABELS: Record<MovementKind, string> = {
+  initial: 'Saldo inicial',
+  manual: 'Movimiento',
+  transfer: 'Traspaso',
+  savings: 'Ahorro del mes',
+  provision: 'Apartado de provisión',
+  provision_payment: 'Pago de provisión',
+  extra: 'Reparto del extra',
+  leftover: 'Sobrante del mes',
+  cover: 'Cubrir exceso',
+};
+
+export const movementInputSchema = z.object({
+  bucketId: z.int().positive(),
+  /** Positivo = entra en la hucha; negativo = sale. */
+  amountCents: z.int().refine((v) => v !== 0, 'El importe no puede ser 0'),
+  date: isoDateSchema,
+  kind: z.enum(['initial', 'manual']),
+  affectsBudget: z.boolean().default(false),
+  note: z.string().trim().max(200).default(''),
+});
+export type MovementInput = z.input<typeof movementInputSchema>;
+
+export const transferInputSchema = z
+  .object({
+    fromBucketId: z.int().positive(),
+    toBucketId: z.int().positive(),
+    amountCents: centsSchema,
+    date: isoDateSchema,
+    note: z.string().trim().max(200).default(''),
+  })
+  .refine((t) => t.fromBucketId !== t.toBucketId, { message: 'Elige dos huchas distintas', path: ['toBucketId'] });
+export type TransferInput = z.input<typeof transferInputSchema>;
+
+export interface BucketMovement {
+  id: number;
+  bucketId: number;
+  amountCents: number;
+  date: string;
+  /** Mes al que pertenece (para cierres y movimientos que afectan al mes). */
+  month: string | null;
+  kind: MovementKind;
+  affectsBudget: boolean;
+  note: string;
+  createdAt: string;
+}
+
+// ---- Cierre de mes ----
+
+export const closeMovementSchema = z.object({
+  bucketId: z.int().positive(),
+  amountCents: z.int().refine((v) => v !== 0),
+  kind: z.enum(CLOSE_MOVEMENT_KINDS),
+  note: z.string().max(200).default(''),
+});
+export type CloseMovement = z.input<typeof closeMovementSchema>;
+
+export const monthCloseInputSchema = z.object({
+  movements: z.array(closeMovementSchema).max(200),
+  incomeCents: z.int().min(0),
+  needsCents: z.int().min(0),
+  wantsCents: z.int().min(0),
+  savingsCents: z.int(),
+});
+export type MonthCloseInput = z.input<typeof monthCloseInputSchema>;
+
+export interface MonthClose {
+  month: string;
+  closedAt: string;
+  incomeCents: number;
+  needsCents: number;
+  wantsCents: number;
+  savingsCents: number;
+}

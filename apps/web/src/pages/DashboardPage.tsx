@@ -1,29 +1,39 @@
 import { type ReactNode, useState } from 'react';
 import { Link, useSearchParams } from 'react-router';
 import {
+  type Bucket,
   type Category,
   type DueStatus,
   type MonthBudget,
-  computeMonthBudget,
+  type MonthClose,
+  type Settings,
+  addMonths,
   currentMonth,
   daysInMonth,
   formatEuros,
+  monthLabel,
+  monthMeter,
   monthSchema,
+  proposeClose,
   todayISO,
 } from '@contapp/shared';
 import {
+  useBuckets,
   useCategories,
   useCreateExpense,
+  useCreateMovement,
   useDeleteExpense,
   useExpenses,
   useIncomes,
-  useRecurring,
-  useSettings,
+  useMonthCloses,
+  useMonthMovements,
 } from '../api';
 import { QuickExpenseForm } from '../components/ExpenseForm';
+import { Meter } from '../components/Meter';
 import { CategoryIcon } from '../components/categories';
 import { useToast } from '../components/feedback';
 import { Button, Card, EmptyState, ErrorText, Modal, MonthPicker, cx } from '../components/ui';
+import { useMonthBudget } from '../hooks';
 
 export function DashboardPage() {
   const [params, setParams] = useSearchParams();
@@ -32,13 +42,11 @@ export function DashboardPage() {
   const setMonth = (m: string) => setParams(m === currentMonth() ? {} : { mes: m });
   const [adding, setAdding] = useState(false);
 
-  const settings = useSettings();
-  const incomes = useIncomes(month);
-  const expenses = useExpenses(month);
-  const recurring = useRecurring();
+  const state = useMonthBudget(month);
   const categories = useCategories(true);
-  const queries = [settings, incomes, expenses, recurring, categories];
-  const error = queries.find((q) => q.error)?.error;
+  const buckets = useBuckets();
+  const closes = useMonthCloses();
+  const error = state.status === 'error' ? state.error : (categories.error ?? buckets.error ?? closes.error);
 
   const monthQuery = month === currentMonth() ? '' : `?mes=${month}`;
 
@@ -51,21 +59,17 @@ export function DashboardPage() {
 
       {error ? (
         <ErrorText error={error} />
-      ) : !settings.data || !incomes.data || !expenses.data || !recurring.data || !categories.data ? (
+      ) : state.status !== 'ready' || !categories.data || !buckets.data || !closes.data ? (
         <EmptyState>Cargando…</EmptyState>
       ) : (
         <Dashboard
           month={month}
           monthQuery={monthQuery}
-          budget={computeMonthBudget({
-            month,
-            today: todayISO(),
-            settings: settings.data,
-            incomes: incomes.data,
-            expenses: expenses.data,
-            recurring: recurring.data,
-          })}
-          hasReference={settings.data.referenceIncomeCents !== null}
+          budget={state.budget}
+          settings={state.settings}
+          buckets={buckets.data}
+          close={closes.data.find((c) => c.month === month) ?? null}
+          closes={closes.data}
           categoryById={new Map(categories.data.map((c) => [c.id, c]))}
         />
       )}
@@ -90,19 +94,41 @@ function Dashboard({
   month,
   monthQuery,
   budget,
-  hasReference,
+  settings,
+  buckets,
+  close,
+  closes,
   categoryById,
 }: {
   month: string;
   monthQuery: string;
   budget: MonthBudget;
-  hasReference: boolean;
+  settings: Settings;
+  buckets: Bucket[];
+  close: MonthClose | null;
+  closes: MonthClose[];
   categoryById: Map<number, Category>;
 }) {
-  const nothingYet = !hasReference && budget.income.actual === 0;
+  const nothingYet = settings.referenceIncomeCents === null && budget.income.actual === 0;
+  const isCurrent = month === currentMonth();
+  const targets = { needs: settings.targetNeedsPct, wants: settings.targetWantsPct, savings: settings.targetSavingsPct };
 
   return (
     <>
+      {isCurrent && <PreviousMonthBanner closes={closes} />}
+
+      {close && (
+        <Card className="flex items-center gap-3 bg-emerald-50 ring-emerald-200 dark:bg-emerald-950/40 dark:ring-emerald-900">
+          <span className="text-xl">✅</span>
+          <p className="flex-1 text-sm">
+            Mes cerrado. Si cambias algo, reábrelo y vuelve a cerrarlo para que las huchas cuadren.
+          </p>
+          <Link to={`/cerrar/${month}`} className="text-sm font-medium text-emerald-700 underline dark:text-emerald-400">
+            Ver
+          </Link>
+        </Card>
+      )}
+
       {nothingYet && (
         <Card className="bg-emerald-50 ring-emerald-200 dark:bg-emerald-950/40 dark:ring-emerald-900">
           <p className="font-medium">Para empezar</p>
@@ -121,26 +147,171 @@ function Dashboard({
       )}
 
       <HealthBanner budget={budget} />
-      {!nothingYet && <Hero budget={budget} monthQuery={monthQuery} />}
-
-      {budget.income.extra > 0 && (
-        <Card className="flex items-center gap-3 bg-amber-50 ring-amber-200 dark:bg-amber-950/30 dark:ring-amber-900">
-          <span className="text-2xl">✨</span>
-          <div className="flex-1 text-sm">
-            <p className="font-semibold">
-              {formatEuros(budget.income.extra)} extra sobre tu referencia
-            </p>
-            <p className="text-slate-600 dark:text-slate-300">
-              No cuenta como dinero para gastar. Pronto podrás repartirlo en tus huchas (colchón, ahorro…).
-            </p>
-          </div>
-        </Card>
-      )}
+      {!nothingYet && !close && <Hero budget={budget} monthQuery={monthQuery} />}
+      {!close && <CushionSuggestion budget={budget} buckets={buckets} month={month} />}
+      {budget.income.extra > 0 && <ExtraCard budget={budget} settings={settings} buckets={buckets} closed={!!close} />}
 
       <Dues dues={budget.dues} month={month} categoryById={categoryById} />
       <Budgets budget={budget} categoryById={categoryById} />
+
+      {!nothingYet && (
+        <Section title={close ? 'Tu reparto' : 'Tu reparto (si el mes acabara hoy)'}>
+          <Card>
+            <Meter
+              values={
+                close
+                  ? { income: close.incomeCents, needs: close.needsCents, wants: close.wantsCents, savings: close.savingsCents }
+                  : monthMeter(budget)
+              }
+              targets={targets}
+            />
+          </Card>
+        </Section>
+      )}
+
       {!nothingYet && <Breakdown budget={budget} />}
+
+      {!close && month <= currentMonth() && !nothingYet && (
+        <Link to={`/cerrar/${month}`} className="block">
+          <Card className="flex items-center gap-3 transition hover:ring-emerald-300 dark:hover:ring-emerald-800">
+            <span className="text-2xl">🔒</span>
+            <div className="flex-1">
+              <p className="font-medium">Cerrar {monthLabel(month)}</p>
+              <p className="text-xs text-slate-500 dark:text-slate-400">
+                {isCurrent
+                  ? 'Al acabar el mes: reparte el ahorro, el extra y lo que sobre en tus huchas.'
+                  : 'Reparte el ahorro, el extra y lo que sobró en tus huchas.'}
+              </p>
+            </div>
+            <span className="text-slate-400">›</span>
+          </Card>
+        </Link>
+      )}
     </>
+  );
+}
+
+// ---- Mes anterior sin cerrar ----
+
+function PreviousMonthBanner({ closes }: { closes: MonthClose[] }) {
+  const previous = addMonths(currentMonth(), -1);
+  const incomes = useIncomes(previous);
+  const expenses = useExpenses(previous);
+  const hasData = (incomes.data?.length ?? 0) > 0 || (expenses.data?.length ?? 0) > 0;
+  if (!hasData || closes.some((c) => c.month === previous)) return null;
+
+  return (
+    <Link to={`/cerrar/${previous}`} className="block">
+      <Card className="flex items-center gap-3 bg-sky-50 ring-sky-200 dark:bg-sky-950/40 dark:ring-sky-900">
+        <span className="text-xl">🔒</span>
+        <p className="flex-1 text-sm">
+          <strong className="first-letter:uppercase">{monthLabel(previous)}</strong> está sin cerrar. Ciérralo para
+          repartir lo que sobró en tus huchas.
+        </p>
+        <span className="text-slate-400">›</span>
+      </Card>
+    </Link>
+  );
+}
+
+// ---- Usar el colchón en un mes malo ----
+
+function CushionSuggestion({ budget, buckets, month }: { budget: MonthBudget; buckets: Bucket[]; month: string }) {
+  const create = useCreateMovement();
+  const movements = useMonthMovements(month);
+  const toast = useToast();
+  const { reference, actual, estimated } = budget.income;
+  const cushion = buckets.find((b) => b.type === 'cushion' && b.balanceCents > 0);
+  if (reference === null || estimated || actual >= reference || !cushion || !movements.data) return null;
+
+  // Lo que ya se ha sacado de huchas este mes para gastar cuenta como cubierto.
+  const alreadyCovered = -movements.data
+    .filter((m) => m.affectsBudget && m.amountCents < 0)
+    .reduce((s, m) => s + m.amountCents, 0);
+  const shortfall = reference - actual - alreadyCovered;
+  if (shortfall <= 0) return null;
+  const amount = Math.min(shortfall, cushion.balanceCents);
+  const date = month === currentMonth() ? todayISO() : `${month}-${String(daysInMonth(month)).padStart(2, '0')}`;
+
+  return (
+    <Card className="space-y-2 bg-sky-50 ring-sky-200 dark:bg-sky-950/40 dark:ring-sky-900">
+      <p className="text-sm">
+        Este mes te faltan <strong>{formatEuros(shortfall)}</strong> para llegar a tu referencia. Puedes
+        completarlo con tu {cushion.icon} {cushion.name} (tiene {formatEuros(cushion.balanceCents)}).
+      </p>
+      <Button
+        variant="secondary"
+        disabled={create.isPending}
+        onClick={async () => {
+          try {
+            await create.mutateAsync({
+              bucketId: cushion.id,
+              amountCents: -amount,
+              date,
+              kind: 'manual',
+              affectsBudget: true,
+              note: 'Completar el mes hasta la referencia',
+            });
+            toast({ message: `${formatEuros(amount)} del colchón para este mes`, tone: 'success' });
+          } catch (err) {
+            toast({ message: err instanceof Error ? err.message : 'No se pudo guardar', tone: 'error' });
+          }
+        }}
+      >
+        Usar {formatEuros(amount)} del colchón
+      </Button>
+    </Card>
+  );
+}
+
+// ---- Extra ----
+
+function ExtraCard({
+  budget,
+  settings,
+  buckets,
+  closed,
+}: {
+  budget: MonthBudget;
+  settings: Settings;
+  buckets: Bucket[];
+  closed: boolean;
+}) {
+  // Lo que irá a cada hucha al cerrar, según las reglas.
+  const toBuckets = proposeClose({ budget, settings, buckets, leftoverBucketId: null, coverBucketId: null }).movements.filter(
+    (m) => m.kind === 'extra',
+  );
+  const byId = new Map(buckets.map((b) => [b.id, b]));
+  const hasRules = settings.extraRules.length > 0;
+
+  return (
+    <Card className="space-y-2 bg-amber-50 ring-amber-200 dark:bg-amber-950/30 dark:ring-amber-900">
+      <div className="flex items-center gap-3">
+        <span className="text-2xl">✨</span>
+        <p className="flex-1 font-semibold">{formatEuros(budget.income.extra)} extra sobre tu referencia</p>
+      </div>
+      {!hasRules ? (
+        <p className="text-sm text-slate-600 dark:text-slate-300">
+          Decide cómo repartirlo en{' '}
+          <Link to="/ajustes" className="font-medium underline">
+            Ajustes → Reparto del extra
+          </Link>
+          .
+        </p>
+      ) : (
+        <ul className="space-y-0.5 text-sm text-slate-700 dark:text-slate-300">
+          {budget.income.extraFree > 0 && (
+            <li>🎈 {formatEuros(budget.income.extraFree)} libres: ya están sumados a lo que puedes gastar</li>
+          )}
+          {toBuckets.map((m) => (
+            <li key={m.bucketId}>
+              {byId.get(m.bucketId)?.icon} {formatEuros(m.amountCents)} → {byId.get(m.bucketId)?.name}
+              {closed ? '' : ' (al cerrar el mes)'}
+            </li>
+          ))}
+        </ul>
+      )}
+    </Card>
   );
 }
 
@@ -177,11 +348,11 @@ function HealthBanner({ budget }: { budget: MonthBudget }) {
 // ---- Lo que queda ----
 
 function Hero({ budget, monthQuery }: { budget: MonthBudget; monthQuery: string }) {
-  const { remaining, available, daysLeft, dailyAllowance, pace, income } = budget;
+  const { remaining, spendable, daysLeft, dailyAllowance, pace, income } = budget;
   const counted = budget.spent.free + budget.spent.variableOverspend + budget.spent.fixedOverrun;
   const over = remaining < 0;
-  const usedPct = available > 0 ? Math.min(100, (counted / available) * 100) : 100;
-  const pacePct = available > 0 ? Math.min(100, (pace.expected / available) * 100) : 0;
+  const usedPct = spendable > 0 ? Math.min(100, (counted / spendable) * 100) : 100;
+  const pacePct = spendable > 0 ? Math.min(100, (pace.expected / spendable) * 100) : 0;
 
   return (
     <Card className="space-y-3">
@@ -221,7 +392,7 @@ function Hero({ budget, monthQuery }: { budget: MonthBudget; monthQuery: string 
         </div>
         <div className="mt-1.5 flex justify-between text-xs text-slate-500 dark:text-slate-400">
           <span>Gastado {formatEuros(counted)}</span>
-          <span>de {formatEuros(Math.max(0, available))}</span>
+          <span>de {formatEuros(Math.max(0, spendable))}</span>
         </div>
       </div>
 
@@ -355,7 +526,7 @@ function Budgets({ budget, categoryById }: { budget: MonthBudget; categoryById: 
 // ---- Desglose ----
 
 function Breakdown({ budget }: { budget: MonthBudget }) {
-  const { income, commitments, savings, available, spent, remaining } = budget;
+  const { income, commitments, savings, available, spent, remaining, variableSurplus, leftover } = budget;
   return (
     <Section title="Cómo se calcula">
       <Card className="space-y-1.5 text-sm">
@@ -363,6 +534,7 @@ function Breakdown({ budget }: { budget: MonthBudget }) {
           label={income.estimated ? 'Ingreso (estimado)' : income.reference !== null ? 'Ingreso presupuestado' : 'Ingresos'}
           value={income.base}
         />
+        {income.extraFree > 0 && <Line label="Parte libre del extra" value={income.extraFree} />}
         <Line label="Fijos" value={-commitments.fixed} />
         <Line label="Provisiones (apartar)" value={-commitments.provision} />
         <Line label="Variables (presupuestos)" value={-commitments.variable} />
@@ -371,7 +543,16 @@ function Breakdown({ budget }: { budget: MonthBudget }) {
         <Line label="Gasto libre" value={-spent.free} />
         {spent.variableOverspend > 0 && <Line label="Exceso en presupuestos" value={-spent.variableOverspend} />}
         {spent.fixedOverrun > 0 && <Line label="Fijos más caros de lo previsto" value={-spent.fixedOverrun} />}
+        {spent.toBuckets !== 0 && (
+          <Line label={spent.toBuckets > 0 ? 'Metido en huchas' : 'Sacado de huchas'} value={-spent.toBuckets} />
+        )}
         <Line label="Queda" value={remaining} strong />
+        {variableSurplus > 0 && (
+          <>
+            <Line label="Sin gastar de presupuestos" value={variableSurplus} />
+            <Line label="Sobrante al cerrar (si acabara hoy)" value={leftover} strong />
+          </>
+        )}
         {spent.fromProvisions > 0 && (
           <p className="pt-1 text-xs text-slate-500 dark:text-slate-400">
             Además has pagado {formatEuros(spent.fromProvisions)} con lo apartado en provisiones.
