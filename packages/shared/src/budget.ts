@@ -13,7 +13,8 @@ import type { Settings } from './schemas.ts';
 // Cálculo del presupuesto de un mes. Todo en céntimos.
 //
 //   base        = ingreso de referencia (o lo cobrado, si es menos)
-//   disponible  = base − fijos − provisiones − variables − ahorro mínimo
+//   ahorro      = importe fijo, % de la base, o lo mayor de los dos (según ajustes)
+//   disponible  = base − fijos − provisiones − variables − ahorro
 //   restante    = disponible − gasto libre − excesos de variables − sobrecostes de fijos
 //
 // Cómo cuenta cada gasto:
@@ -87,7 +88,8 @@ export interface MonthBudget {
     extra: number;
   };
   commitments: CommitmentSummary;
-  minSavings: number;
+  /** Ahorro que se aparta este mes. */
+  savings: number;
   available: number;
   spent: {
     /** Gastos sin vínculo a recurrentes ni presupuestos. */
@@ -109,7 +111,7 @@ export interface MonthBudget {
     status: PaceStatus;
   };
   health: {
-    /** (comprometido + ahorro mínimo) / ingreso de referencia, en %. */
+    /** (comprometido + ahorro) / ingreso de referencia, en %. */
     ratioPct: number | null;
     thresholdPct: number;
     status: HealthStatus;
@@ -119,6 +121,15 @@ export interface MonthBudget {
 }
 
 const sum = (values: number[]) => values.reduce((a, b) => a + b, 0);
+
+/** Ahorro del mes según el modo configurado. El % se aplica sobre el ingreso presupuestado (base). */
+export function monthlySavings(settings: Settings, base: number): number {
+  const fixed = settings.minSavingsCents;
+  const percent = Math.round((Math.max(0, base) * settings.savingsPct) / 100);
+  if (settings.savingsMode === 'fixed') return fixed;
+  if (settings.savingsMode === 'percent') return percent;
+  return Math.max(fixed, percent);
+}
 
 export function computeMonthBudget(input: BudgetInput): MonthBudget {
   const { month, today, settings, incomes, expenses, recurring } = input;
@@ -136,8 +147,8 @@ export function computeMonthBudget(input: BudgetInput): MonthBudget {
 
   // ---- Comprometido ----
   const commitments = commitmentSummary(recurring, month);
-  const minSavings = settings.minSavingsCents;
-  const available = base - commitments.total - minSavings;
+  const savings = monthlySavings(settings, base);
+  const available = base - commitments.total - savings;
 
   // ---- Clasificación de gastos ----
   const active = recurring.filter((r) => monthlyCommitment(r, month) > 0);
@@ -222,7 +233,7 @@ export function computeMonthBudget(input: BudgetInput): MonthBudget {
 
   // ---- Salud ----
   const healthBase = reference ?? (actual > 0 ? actual : null);
-  const ratioPct = healthBase ? Math.round(((commitments.total + minSavings) / healthBase) * 100) : null;
+  const ratioPct = healthBase ? Math.round(((commitments.total + savings) / healthBase) * 100) : null;
   let healthStatus: HealthStatus = 'ok';
   if (ratioPct !== null && ratioPct > 100) healthStatus = 'critical';
   else if (ratioPct !== null && ratioPct > settings.healthThresholdPct) healthStatus = 'warning';
@@ -230,7 +241,7 @@ export function computeMonthBudget(input: BudgetInput): MonthBudget {
   return {
     income: { actual, reference, base, estimated, extra },
     commitments,
-    minSavings,
+    savings,
     available,
     spent: {
       free,

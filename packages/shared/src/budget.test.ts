@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { type BudgetExpense, type BudgetInput, type BudgetRecurring, computeMonthBudget } from './budget.ts';
+import {
+  type BudgetExpense,
+  type BudgetInput,
+  type BudgetRecurring,
+  computeMonthBudget,
+  monthlySavings,
+} from './budget.ts';
+import type { Settings } from './schemas.ts';
 
 const rec = (r: Partial<BudgetRecurring> & Pick<BudgetRecurring, 'id' | 'type'>, amount: number): BudgetRecurring => ({
   name: `r${r.id}`,
@@ -31,7 +38,7 @@ const gasto = (amountCents: number, extra: Partial<BudgetExpense> = {}): BudgetE
 const base = (over: Partial<BudgetInput> = {}): BudgetInput => ({
   month: '2026-11',
   today: '2026-11-11',
-  settings: { referenceIncomeCents: 100000, minSavingsCents: 5000, healthThresholdPct: 70 },
+  settings: { referenceIncomeCents: 100000, savingsMode: 'fixed', minSavingsCents: 5000, savingsPct: 0, healthThresholdPct: 70 },
   incomes: [],
   expenses: [],
   recurring: [CASA, SEGURO, GASOLINA],
@@ -58,7 +65,7 @@ describe('ingresos', () => {
 
   it('sin referencia, se usa todo lo cobrado', () => {
     const b = computeMonthBudget(
-      base({ settings: { referenceIncomeCents: null, minSavingsCents: 0, healthThresholdPct: 70 }, incomes: [{ amountCents: 150000 }] }),
+      base({ settings: { referenceIncomeCents: null, savingsMode: 'fixed', minSavingsCents: 0, savingsPct: 0, healthThresholdPct: 70 }, incomes: [{ amountCents: 150000 }] }),
     );
     expect(b.income.base).toBe(150000);
     expect(b.income.extra).toBe(0);
@@ -150,5 +157,39 @@ describe('salud del presupuesto', () => {
   it('crítico si lo comprometido supera el ingreso', () => {
     const cuota = rec({ id: 4, type: 'fixed' }, 30000);
     expect(computeMonthBudget(base({ recurring: [CASA, SEGURO, GASOLINA, cuota] })).health.status).toBe('critical');
+  });
+});
+
+describe('ahorro', () => {
+  const ajustes = (over: Partial<Settings>): Settings => ({
+    referenceIncomeCents: 100000,
+    savingsMode: 'fixed',
+    minSavingsCents: 5000,
+    savingsPct: 15,
+    healthThresholdPct: 70,
+    ...over,
+  });
+
+  it('importe fijo', () => {
+    expect(monthlySavings(ajustes({ savingsMode: 'fixed' }), 100000)).toBe(5000);
+  });
+
+  it('porcentaje de la base', () => {
+    expect(monthlySavings(ajustes({ savingsMode: 'percent' }), 100000)).toBe(15000);
+    expect(monthlySavings(ajustes({ savingsMode: 'percent' }), 0)).toBe(0);
+  });
+
+  it('lo mayor: el fijo hace de suelo en los meses malos', () => {
+    expect(monthlySavings(ajustes({ savingsMode: 'max' }), 100000)).toBe(15000);
+    expect(monthlySavings(ajustes({ savingsMode: 'max' }), 20000)).toBe(5000);
+  });
+
+  it('el % se aplica a la base, no al extra', () => {
+    // Cobra 1.400 con referencia 1.000: 15 % de 1.000, no de 1.400.
+    const b = computeMonthBudget(
+      base({ settings: ajustes({ savingsMode: 'percent' }), incomes: [{ amountCents: 140000 }] }),
+    );
+    expect(b.savings).toBe(15000);
+    expect(b.available).toBe(100000 - 67000 - 15000);
   });
 });

@@ -97,6 +97,8 @@ export const ledgerSettings = sqliteTable('ledger_settings', {
     .primaryKey()
     .references(() => ledgers.id),
   referenceIncomeCents: integer('reference_income_cents'),
+  savingsMode: text('savings_mode', { enum: ['fixed', 'percent', 'max'] }).notNull().default('fixed'),
   minSavingsCents: integer('min_savings_cents').notNull().default(0),
+  savingsPct: integer('savings_pct').notNull().default(0),
   healthThresholdPct: integer('health_threshold_pct').notNull().default(70),
 });

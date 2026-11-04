@@ -29,7 +29,8 @@ comprometido, qué hay que apartar, qué se puede ahorrar y qué se puede gastar
 - **Extra** (lo cobrado por encima) se reparte por reglas configurables, p. ej.:
   40 % colchón de verano · 40 % ahorro/objetivos · 20 % libre.
 - **Ingresos puntuales** (atrasos, devoluciones) tienen su propia regla (p. ej. 70 % ahorro · 30 % libre).
-- **Ahorro mínimo** fijo cada mes, aunque sea un mes malo.
+- **Ahorro mensual**: importe fijo, % del ingreso presupuestado, o lo mayor de los dos (el fijo hace de
+  suelo en los meses malos). El grueso del ahorro sale del **extra** (dietas, atrasos, pagas).
 - Prioridad de huchas: 1) fondo de emergencia (3 meses de fijos) · 2) colchón de verano · 3) objetivos.
 
 ### Tipos de gasto recurrente
@@ -104,6 +105,7 @@ Objetivo: saber en todo momento cuánto puedo gastar.
 - [x] Pagos del mes (fijos y provisiones que tocan) → botón "Pagar" que genera el gasto vinculado
 - [x] Lo cobrado por encima de la referencia se muestra como **extra** (se reparte en la fase 3)
 - [x] Cálculo en `packages/shared/src/budget.ts` con tests
+- [x] Ahorro como importe fijo, % o lo mayor de los dos, con vista previa en Ajustes
 
 ### Fase 3 — Las huchas
 Objetivo: que el dinero que sobra tenga un destino.
@@ -114,6 +116,9 @@ Objetivo: que el dinero que sobra tenga un destino.
 - [ ] Mover dinero a una hucha en cualquier momento
 - [ ] **Cierre de mes**: resumen + propuesta de reparto del sobrante (o cubrir el exceso desde el colchón)
 - [ ] Hucha "Regularización autónomo"
+- [ ] **Medidor de reparto** al cerrar el mes: necesidades (fijos + provisiones + variables) · deseos
+      (gasto libre) · ahorro (todo lo que acaba en huchas), frente a un objetivo **configurable**
+      (50/30/20 por defecto; la idea es ahorrar más del 20 % recortando deseos) y su evolución mes a mes
 
 ### Fase 4 — La SL
 Objetivo: controlar el dinero de la SL sin mezclarlo con el personal.

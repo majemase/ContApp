@@ -146,11 +146,29 @@ export interface Income {
 
 // ---- Ajustes del ámbito ----
 
+/**
+ * Cómo se calcula el ahorro que se aparta cada mes:
+ * - fixed: un importe fijo
+ * - percent: un % del ingreso presupuestado del mes
+ * - max: lo mayor de los dos (el importe fijo hace de suelo en los meses malos)
+ */
+export const SAVINGS_MODES = ['fixed', 'percent', 'max'] as const;
+export type SavingsMode = (typeof SAVINGS_MODES)[number];
+
+export const SAVINGS_MODE_LABELS: Record<SavingsMode, string> = {
+  fixed: 'Importe fijo',
+  percent: 'Porcentaje',
+  max: 'Lo mayor',
+};
+
 export const settingsSchema = z.object({
   /** Ingreso conservador con el que se presupuesta cada mes. Null = usar lo cobrado. */
   referenceIncomeCents: z.int().positive().nullable(),
-  /** Ahorro que se aparta todos los meses, aunque sea un mes malo. */
+  savingsMode: z.enum(SAVINGS_MODES),
+  /** Importe fijo de ahorro mensual (modos fixed y max). */
   minSavingsCents: z.int().min(0),
+  /** % del ingreso presupuestado que se ahorra (modos percent y max). */
+  savingsPct: z.int().min(0).max(100),
   /** % del ingreso de referencia a partir del cual lo comprometido se considera demasiado. */
   healthThresholdPct: z.int().min(1).max(100),
 });
@@ -158,6 +176,8 @@ export type Settings = z.infer<typeof settingsSchema>;
 
 export const DEFAULT_SETTINGS: Settings = {
   referenceIncomeCents: null,
+  savingsMode: 'fixed',
   minSavingsCents: 0,
+  savingsPct: 0,
   healthThresholdPct: 70,
 };

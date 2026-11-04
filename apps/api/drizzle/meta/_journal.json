@@ -15,6 +15,13 @@
       "when": 1793832684452,
       "tag": "0001_faithful_zaladane",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1793833788690,
+      "tag": "0002_nosy_ben_urich",
+      "breakpoints": true
     }
   ]
 }

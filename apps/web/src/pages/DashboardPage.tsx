@@ -162,11 +162,11 @@ function HealthBanner({ budget }: { budget: MonthBudget }) {
       <span className="text-xl">{critical ? '🚨' : '⚠️'}</span>
       <div className="text-sm">
         <p className="font-semibold">
-          {critical ? 'Tus gastos fijos superan tu ingreso' : `Lo comprometido es el ${ratioPct} % de tu ingreso`}
+          {critical ? 'Lo comprometido supera tu ingreso' : `Lo comprometido es el ${ratioPct} % de tu ingreso`}
         </p>
         <p className="text-slate-600 dark:text-slate-300">
           {critical
-            ? `Fijos, provisiones, variables y ahorro mínimo suman el ${ratioPct} % de tu ingreso de referencia. Revisa tus recurrentes.`
+            ? `Fijos, provisiones, variables y ahorro suman el ${ratioPct} % de tu ingreso de referencia. Revisa tus recurrentes o el ahorro en Ajustes.`
             : `Tu límite está en el ${thresholdPct} %. Queda poco margen para el día a día y los imprevistos.`}
         </p>
       </div>
@@ -355,7 +355,7 @@ function Budgets({ budget, categoryById }: { budget: MonthBudget; categoryById: 
 // ---- Desglose ----
 
 function Breakdown({ budget }: { budget: MonthBudget }) {
-  const { income, commitments, minSavings, available, spent, remaining } = budget;
+  const { income, commitments, savings, available, spent, remaining } = budget;
   return (
     <Section title="Cómo se calcula">
       <Card className="space-y-1.5 text-sm">
@@ -366,7 +366,7 @@ function Breakdown({ budget }: { budget: MonthBudget }) {
         <Line label="Fijos" value={-commitments.fixed} />
         <Line label="Provisiones (apartar)" value={-commitments.provision} />
         <Line label="Variables (presupuestos)" value={-commitments.variable} />
-        {minSavings > 0 && <Line label="Ahorro mínimo" value={-minSavings} />}
+        {savings > 0 && <Line label="Ahorro" value={-savings} />}
         <Line label="Disponible" value={available} strong />
         <Line label="Gasto libre" value={-spent.free} />
         {spent.variableOverspend > 0 && <Line label="Exceso en presupuestos" value={-spent.variableOverspend} />}
