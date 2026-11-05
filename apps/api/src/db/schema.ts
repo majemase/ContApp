@@ -171,20 +171,13 @@ export const monthCloses = sqliteTable(
   (t) => [primaryKey({ columns: [t.ledgerId, t.month] })],
 );
 
-/** Usuarios de la app */
-export const users = sqliteTable(
-  'users', 
-  {
-  id: integer('id')
-    .primaryKey({ autoIncrement:true }),
-  sub: text('sub')
-    .notNull()
-    .unique(),
+/** Usuarios de la app. `sub` es el identificador del IdP; el email solo es informativo. */
+export const users = sqliteTable('users', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  sub: text('sub').notNull().unique(),
   email: text('email'),
   name: text('name'),
-  active: integer('active', { mode: 'boolean' })
-    .notNull()
-    .default(true),
+  active: integer('active', { mode: 'boolean' }).notNull().default(true),
   createdAt: createdAt(),
 });
 
@@ -197,11 +190,10 @@ export const ledgerMembers = sqliteTable(
     ledgerId: integer('ledger_id')
       .references(() => ledgers.id, { onDelete: 'cascade' })
       .notNull(),
-    role: text('role', { enum: ['owner', 'editor', 'viewer'] })
-      .notNull()
+    role: text('role', { enum: ['owner', 'editor', 'viewer'] }).notNull(),
   },
   (t) => [
     primaryKey({ columns: [t.userId, t.ledgerId] }),
-    index('ledger_members_ledger').on(t.ledgerId)
-  ]
+    index('ledger_members_ledger').on(t.ledgerId),
+  ],
 );

@@ -1,7 +1,7 @@
 import type { Context } from 'hono';
 import type { ContentfulStatusCode } from 'hono/utils/http-status';
 import type { z } from 'zod';
-import { idSchema } from '@contapp/shared';
+import { idSchema, type LedgerRole } from '@contapp/shared';
 
 export class HttpError extends Error {
   constructor(
@@ -13,7 +13,11 @@ export class HttpError extends Error {
   }
 }
 
-export type LedgerEnv = { Variables: { ledgerId: number } };
+/** Rutas con usuario identificado (lo pone el middleware currentUser). */
+export type AuthEnv = { Variables: { userId: number } };
+
+/** Rutas de un ámbito: además del usuario, el ámbito y su rol en él. */
+export type LedgerEnv = { Variables: { userId: number; ledgerId: number; role: LedgerRole } };
 
 /** Lee y valida el body JSON. Lanza 400 con los errores de validación. */
 export async function parseJson<S extends z.ZodType>(c: Context, schema: S): Promise<z.infer<S>> {

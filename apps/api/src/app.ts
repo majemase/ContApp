@@ -1,9 +1,10 @@
-import { asc, eq } from 'drizzle-orm';
+import { and, asc, eq } from 'drizzle-orm';
 import { Hono } from 'hono';
 import { idSchema } from '@contapp/shared';
+import { currentUser } from './auth.ts';
 import { db } from './db/client.ts';
-import { ledgers } from './db/schema.ts';
-import { HttpError, type LedgerEnv } from './http.ts';
+import { ledgerMembers, ledgers } from './db/schema.ts';
+import { type AuthEnv, HttpError, type LedgerEnv } from './http.ts';
 import { bucketRoutes, movementRoutes } from './routes/buckets.ts';
 import { categoryRoutes } from './routes/categories.ts';
 import { expenseRoutes } from './routes/expenses.ts';
@@ -14,14 +15,25 @@ import { settingsRoutes } from './routes/settings.ts';
 
 // La app sin arranque ni servidor: index.ts la sirve y los tests la llaman con app.request().
 
+const READ_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
+
 // Todo lo que cuelga de /api/ledgers/:ledgerId pertenece a un ámbito (Personal, SL…).
 const ledgerScoped = new Hono<LedgerEnv>()
   .use(async (c, next) => {
     const parsed = idSchema.safeParse(c.req.param('ledgerId'));
     if (!parsed.success) throw new HttpError(400, 'Ámbito no válido');
-    const [ledger] = await db.select({ id: ledgers.id }).from(ledgers).where(eq(ledgers.id, parsed.data));
-    if (!ledger) throw new HttpError(404, 'Ámbito no encontrado');
-    c.set('ledgerId', ledger.id);
+    const [member] = await db
+      .select({ role: ledgerMembers.role })
+      .from(ledgerMembers)
+      .where(and(eq(ledgerMembers.userId, c.get('userId')), eq(ledgerMembers.ledgerId, parsed.data)));
+    // 404 y no 403: a quien no es miembro no le decimos ni que el ámbito existe.
+    if (!member) throw new HttpError(404, 'Ámbito no encontrado');
+    // Aquí y no ruta a ruta: una ruta nueva queda protegida aunque se olvide.
+    if (member.role === 'viewer' && !READ_METHODS.has(c.req.method)) {
+      throw new HttpError(403, 'Solo tienes permiso de lectura en este ámbito');
+    }
+    c.set('ledgerId', parsed.data);
+    c.set('role', member.role);
     await next();
   })
   .route('/categories', categoryRoutes)
@@ -33,12 +45,18 @@ const ledgerScoped = new Hono<LedgerEnv>()
   .route('/movements', movementRoutes)
   .route('/months', monthRoutes);
 
-const api = new Hono()
+const api = new Hono<AuthEnv>()
   .get('/health', (c) => c.json({ ok: true }))
+  // Todo lo demás necesita saber quién eres. /health no: lo usa el healthcheck, sin sesión.
+  // En Hono, '/ledgers/*' incluye también '/ledgers'.
+  .use('/ledgers/*', currentUser)
+  // Solo los ámbitos de los que eres miembro, con tu rol en cada uno.
   .get('/ledgers', async (c) => {
     const rows = await db
-      .select({ id: ledgers.id, name: ledgers.name, kind: ledgers.kind })
-      .from(ledgers)
+      .select({ id: ledgers.id, name: ledgers.name, kind: ledgers.kind, role: ledgerMembers.role })
+      .from(ledgerMembers)
+      .innerJoin(ledgers, eq(ledgers.id, ledgerMembers.ledgerId))
+      .where(eq(ledgerMembers.userId, c.get('userId')))
       .orderBy(asc(ledgers.id));
     return c.json(rows);
   })

@@ -1,7 +1,7 @@
 import { and, desc, eq, inArray } from 'drizzle-orm';
 import { Hono } from 'hono';
 import { CLOSE_MOVEMENT_KINDS, monthBounds, monthCloseInputSchema, monthSchema } from '@contapp/shared';
-import { db } from '../db/client.ts';
+import { db, transaction } from '../db/client.ts';
 import { bucketMovements, buckets, monthCloses } from '../db/schema.ts';
 import { HttpError, type LedgerEnv, parseJson } from '../http.ts';
 
@@ -53,7 +53,7 @@ export const monthRoutes = new Hono<LedgerEnv>()
     }
 
     const date = monthBounds(month).end;
-    await db.transaction(async (tx) => {
+    await transaction(async (tx) => {
       if (input.movements.length > 0) {
         await tx.insert(bucketMovements).values(
           input.movements.map((m) => ({ ...m, ledgerId, date, month, affectsBudget: false })),
@@ -73,7 +73,7 @@ export const monthRoutes = new Hono<LedgerEnv>()
   .delete('/:month/close', async (c) => {
     const ledgerId = c.get('ledgerId');
     const month = parseMonthParam(c.req.param('month'));
-    await db.transaction(async (tx) => {
+    await transaction(async (tx) => {
       await tx
         .delete(bucketMovements)
         .where(

@@ -1,5 +1,5 @@
-import { db } from './client.ts';
-import { categories, ledgers } from './schema.ts';
+import type { Tx } from './client.ts';
+import { categories, ledgerMembers, ledgers } from './schema.ts';
 
 const DEFAULT_CATEGORIES: { name: string; icon: string; color: string }[] = [
   { name: 'Casa', icon: '🏠', color: 'amber' },
@@ -16,16 +16,18 @@ const DEFAULT_CATEGORIES: { name: string; icon: string; color: string }[] = [
   { name: 'Otros', icon: '📦', color: 'slate' },
 ];
 
-/** Crea el ámbito Personal y las categorías por defecto si la BD está vacía. */
-export async function seedIfEmpty() {
-  const existing = await db.select({ id: ledgers.id }).from(ledgers).limit(1);
-  if (existing.length > 0) return;
-
-  const [personal] = await db
+/**
+ * Crea un ámbito Personal con las categorías por defecto y hace al usuario su owner.
+ * Las huchas por defecto las pone ensureDefaultBuckets, fuera de la transacción.
+ */
+export async function createPersonalLedger(tx: Tx, userId: number): Promise<number> {
+  const [ledger] = await tx
     .insert(ledgers)
     .values({ name: 'Personal', kind: 'personal' })
     .returning({ id: ledgers.id });
+  const ledgerId = ledger!.id;
 
-  await db.insert(categories).values(DEFAULT_CATEGORIES.map((c) => ({ ...c, ledgerId: personal!.id })));
-  console.log('Datos iniciales creados');
+  await tx.insert(ledgerMembers).values({ userId, ledgerId, role: 'owner' });
+  await tx.insert(categories).values(DEFAULT_CATEGORIES.map((c) => ({ ...c, ledgerId })));
+  return ledgerId;
 }

@@ -3,7 +3,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "node --watch-path=src --watch-path=drizzle --watch-path=../../packages/shared/src --import tsx src/index.ts",
+    "dev": "node --env-file-if-exists=.env --watch-path=src --watch-path=drizzle --watch-path=../../packages/shared/src --import tsx src/index.ts",
     "start": "node --import tsx src/index.ts",
     "db:generate": "drizzle-kit generate",
     "typecheck": "tsc -p ."

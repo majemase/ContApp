@@ -6,8 +6,8 @@ import { serveStatic } from '@hono/node-server/serve-static';
 import { Hono } from 'hono';
 import { logger } from 'hono/logger';
 import { app } from './app.ts';
+import { assertAuthConfigured } from './auth.ts';
 import { db, initDb } from './db/client.ts';
-import { seedIfEmpty } from './db/seed.ts';
 import { ledgers } from './db/schema.ts';
 import { ensureDefaultBuckets } from './routes/buckets.ts';
 
@@ -23,8 +23,9 @@ if (process.env.NODE_ENV === 'production' && existsSync(webDist)) {
   server.get('*', serveStatic({ root, path: 'index.html' }));
 }
 
+assertAuthConfigured();
 await initDb();
-await seedIfEmpty();
+// Los ámbitos de cada usuario se crean en su primer acceso (users.ts); aquí solo se completan huchas.
 for (const { id } of await db.select({ id: ledgers.id }).from(ledgers)) {
   await ensureDefaultBuckets(id);
 }

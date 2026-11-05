@@ -107,10 +107,16 @@ export interface Expense {
   createdAt: string;
 }
 
+/** owner: todo (incluido invitar) · editor: apuntar y editar · viewer: solo ver. */
+export const LEDGER_ROLES = ['owner', 'editor', 'viewer'] as const;
+export type LedgerRole = (typeof LEDGER_ROLES)[number];
+
 export interface Ledger {
   id: number;
   name: string;
   kind: 'personal' | 'business';
+  /** Tu rol en este ámbito. */
+  role: LedgerRole;
 }
 
 // ---- Ingresos ----

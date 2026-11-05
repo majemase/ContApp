@@ -6,7 +6,7 @@ import {
   recurringCreateSchema,
   recurringUpdateSchema,
 } from '@contapp/shared';
-import { db } from '../db/client.ts';
+import { db, transaction } from '../db/client.ts';
 import { recurringExpenseAmounts, recurringExpenses } from '../db/schema.ts';
 import { HttpError, type LedgerEnv, notFound, paramId, parseJson } from '../http.ts';
 import { assertCategory } from './categories.ts';
@@ -58,7 +58,7 @@ export const recurringRoutes = new Hono<LedgerEnv>()
     const { amountCents, ...input } = await parseJson(c, recurringCreateSchema);
     await assertCategory(ledgerId, input.categoryId);
 
-    const id = await db.transaction(async (tx) => {
+    const id = await transaction(async (tx) => {
       const [row] = await tx
         .insert(recurringExpenses)
         .values({ ...input, ledgerId })
@@ -77,7 +77,7 @@ export const recurringRoutes = new Hono<LedgerEnv>()
     const input = await parseJson(c, recurringUpdateSchema);
     await assertCategory(ledgerId, input.categoryId);
 
-    await db.transaction(async (tx) => {
+    await transaction(async (tx) => {
       await tx.update(recurringExpenses).set(input).where(eq(recurringExpenses.id, current.id));
       // Si se adelanta el inicio, el primer importe debe aplicar desde el nuevo inicio.
       const first = current.amounts[0];

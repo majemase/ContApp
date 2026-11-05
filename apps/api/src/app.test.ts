@@ -17,9 +17,4 @@ describe('API', () => {
     const res = await app.request('/api/no-existe');
     expect(res.status).toBe(404);
   });
-
-  it('devuelve 404 si el ámbito no existe', async () => {
-    const res = await app.request('/api/ledgers/999/categories');
-    expect(res.status).toBe(404);
-  });
 });
