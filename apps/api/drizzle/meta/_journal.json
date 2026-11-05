@@ -36,6 +36,20 @@
       "when": 1793835452578,
       "tag": "0004_nebulous_robin_chapel",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "6",
+      "when": 1793875493782,
+      "tag": "0005_usuarios",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "6",
+      "when": 1793875602030,
+      "tag": "0006_ambitos_al_propietario",
+      "breakpoints": true
     }
   ]
 }
