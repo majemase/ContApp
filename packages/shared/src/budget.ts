@@ -16,7 +16,7 @@ import { type IncomeType, ONE_OFF_INCOME_TYPES, type Settings, freePct, oneOffRu
 //   ahorro      = importe fijo, % de la base, o lo mayor de los dos (según ajustes)
 //   disponible  = base + parte libre del extra − fijos − provisiones − variables − ahorro
 //   restante    = disponible − gasto libre − excesos de variables − sobrecostes de fijos
-//                 − dinero movido a huchas durante el mes (+ lo sacado de ellas)
+//                 − dinero movido a huchas e inversiones durante el mes (+ lo sacado de ellas)
 //   sobrante    = restante + lo no gastado de los presupuestos variables (va a huchas al cerrar)
 //
 // Cómo cuenta cada gasto:
@@ -53,6 +53,8 @@ export interface BudgetInput {
   recurring: BudgetRecurring[];
   /** Movimientos de huchas de este mes que afectan al disponible (+ entra en la hucha, − sale). */
   budgetMovements?: { amountCents: number }[];
+  /** Dinero del mes llevado a inversiones (+) o traído de ellas (−). Ver investmentMonthFlows. */
+  investmentFlows?: { amountCents: number }[];
 }
 
 export interface ProvisionStatus {
@@ -109,7 +111,7 @@ export interface MonthBudget {
   /** Ahorro que se aparta este mes. */
   savings: number;
   available: number;
-  /** Lo que hay para gastar este mes: disponible − lo metido en huchas + lo sacado de ellas. */
+  /** Lo que hay para gastar este mes: disponible − lo metido en huchas e inversiones + lo sacado de ellas. */
   spendable: number;
   spent: {
     /** Gastos sin vínculo a recurrentes ni presupuestos. */
@@ -122,6 +124,8 @@ export interface MonthBudget {
     total: number;
     /** Neto movido a huchas durante el mes desde lo disponible (negativo si se ha sacado). */
     toBuckets: number;
+    /** Neto llevado a inversiones desde lo disponible (negativo si ha vuelto dinero de ellas). */
+    toInvestments: number;
   };
   remaining: number;
   /** Lo no gastado de los presupuestos variables (no está en el restante, pero sobra). */
@@ -170,7 +174,7 @@ export function monthlySavings(settings: Settings, base: number): number {
 }
 
 export function computeMonthBudget(input: BudgetInput): MonthBudget {
-  const { month, today, settings, incomes, expenses, recurring, budgetMovements = [] } = input;
+  const { month, today, settings, incomes, expenses, recurring, budgetMovements = [], investmentFlows = [] } = input;
   const monthEnd = monthBounds(month).end;
 
   // ---- Ingresos ----
@@ -251,7 +255,8 @@ export function computeMonthBudget(input: BudgetInput): MonthBudget {
   const fixedOverrun = sum(dues.filter((d) => d.type === 'fixed').map((d) => Math.max(0, d.paid - d.amount)));
 
   const toBuckets = sum(budgetMovements.map((m) => m.amountCents));
-  const remaining = available - free - variableOverspend - fixedOverrun - toBuckets;
+  const toInvestments = sum(investmentFlows.map((m) => m.amountCents));
+  const remaining = available - free - variableOverspend - fixedOverrun - toBuckets - toInvestments;
   const variableSurplus = sum(variables.map((v) => Math.max(0, v.budget - v.spent)));
 
   const provisions: ProvisionStatus[] = active
@@ -275,8 +280,8 @@ export function computeMonthBudget(input: BudgetInput): MonthBudget {
   const dailyAllowance = daysLeft === null ? null : Math.max(0, Math.floor(remaining / daysLeft));
 
   const counted = free + variableOverspend + fixedOverrun;
-  // Lo que hay para gastar este mes: lo disponible menos lo metido en huchas (más lo sacado de ellas).
-  const spendable = available - toBuckets;
+  // Lo que hay para gastar este mes: lo disponible menos lo metido en huchas e inversiones (más lo sacado).
+  const spendable = available - toBuckets - toInvestments;
   const expected = Math.round(Math.max(0, spendable) * elapsedRatio);
   let paceStatus: PaceStatus = 'none';
   if (month === currentMonth && spendable > 0) paceStatus = counted > expected ? 'over' : 'ok';
@@ -301,6 +306,7 @@ export function computeMonthBudget(input: BudgetInput): MonthBudget {
       fromProvisions,
       total: sum(expenses.map((e) => e.amountCents)),
       toBuckets,
+      toInvestments,
     },
     remaining,
     variableSurplus,

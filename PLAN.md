@@ -8,7 +8,8 @@ comprometido, qué hay que apartar, qué se puede ahorrar y qué se puede gastar
 - **Manual**: sin conexión con bancos. Todo se apunta a mano (más adelante, importar CSV).
 - **Ingresos variables**: se presupuesta con un *ingreso de referencia* conservador; lo que entra
   por encima es *extra* y se reparte con reglas.
-- **Ámbitos separados**: Personal y SL nunca se mezclan. Los movimientos entre ellos son explícitos.
+- **Ámbitos separados**: cada ámbito (Personal, uno compartido…) tiene sus propios datos y miembros.
+  La contabilidad de empresa (SL) queda fuera de ContApp: tiene sus propias reglas y la lleva la gestoría.
 - **Dinero en céntimos**: todos los importes se guardan como enteros (céntimos). Nunca `float`.
 - **Fechas** como texto ISO: días `YYYY-MM-DD`, meses `YYYY-MM`.
 
@@ -60,7 +61,7 @@ Los importes tienen **historial con fecha de vigencia** (tarifa plana del autón
 
 | Tabla | Campos clave | Fase |
 |---|---|---|
-| `ledgers` | nombre, tipo (`personal` / `business`) | 1 |
+| `ledgers` | nombre, tipo (`personal`; `business` existe en el esquema pero no se usa) | 1 |
 | `categories` | ámbito, nombre, icono, color, archivada | 1 |
 | `recurring_expenses` | ámbito, categoría, nombre, tipo, frecuencia (meses), mes/día de cargo, inicio, fin | 1 |
 | `recurring_expense_amounts` | recurrente, importe, válido desde | 1 |
@@ -70,7 +71,12 @@ Los importes tienen **historial con fecha de vigencia** (tarifa plana del autón
 | `buckets` (huchas) | ámbito, nombre, icono, tipo (ahorro / emergencia / colchón / objetivo / provisión), meta, recurrente | 3 |
 | `bucket_movements` | hucha, importe ±, fecha, mes, tipo (inicial / manual / traspaso / cierre…), afecta al mes | 3 |
 | `month_closes` | mes cerrado + foto del medidor (ingresos, necesidades, deseos, ahorro) | 3 |
-| `ledger_transfers` | ámbito origen, destino, importe, tipo (capital / sueldo / préstamo socio) | 4 |
+| `users` | `sub` del IdP (único), email, nombre, activo | M |
+| `ledger_members` | usuario, ámbito, rol (`owner` / `editor` / `viewer`) | M |
+| `investment_accounts` | ámbito, nombre (bróker o plataforma), archivada | 4 |
+| `investment_assets` | cuenta, nombre, ISIN/ticker, tipo, clase de activo, región, archivado | 4 |
+| `investment_operations` | activo, fecha, tipo (aportación / retirada / dividendo / comisión), importe, participaciones (opcional), origen o destino del dinero (mes / hucha / fuera), movimiento de hucha, recurrente | 4 |
+| `investment_valuations` | activo, fecha, valor total (una por activo y día) | 4 |
 
 ---
 
@@ -128,16 +134,78 @@ Objetivo: que el dinero que sobra tenga un destino.
 - [x] Evolución del medidor mes a mes (en Huchas): reparto de cada mes cerrado y ahorro medio
 - [x] Invariante con tests: todo lo cobrado acaba gastado o en una hucha (`closing.test.ts`)
 
-### Fase 4 — La SL
-Objetivo: controlar el dinero de la SL sin mezclarlo con el personal.
+### Fase 4 — Inversiones
+Objetivo: saber cuánto he puesto, cuánto he sacado, cuánto he ganado o perdido y cómo está
+repartida mi cartera (fondos indexados, ETF, acciones, cripto…).
 
-- [ ] Selector de ámbito (Personal / SL)
-- [ ] Ingresos y gastos de la SL con IVA (base + cuota)
-- [ ] Provisiones de impuestos: IVA trimestral, estimación de Impuesto de Sociedades
-- [ ] Movimientos entre ámbitos: aportación de capital, sueldo, préstamo de socio / devolución
-- [ ] Decidir quién paga la cuota de autónomo (Personal o SL)
+**Conceptos**
+- **Cuenta**: dónde está el dinero invertido (un bróker, una gestora, un exchange).
+- **Activo**: lo que tengo dentro de una cuenta (p. ej. un fondo indexado al S&P 500), con su tipo
+  (fondo, ETF, acción, cripto, plan de pensiones…), su clase (renta variable / renta fija /
+  monetario / cripto / otros) y su región (EE. UU., global, Europa, emergentes…).
+- **Operaciones**: aportación (compra), retirada (venta), dividendo y comisión, con importe y
+  participaciones.
+- **Valoración**: el valor total de cada activo en una fecha, apuntado a mano (el que muestra el
+  bróker). Entre valoraciones, el valor se estima: última valoración + aportado − retirado desde
+  entonces. Si hay participaciones, el formulario permite calcular el valor desde el precio.
 
-> No es contabilidad oficial: libros y modelos de Hacienda los lleva la gestoría.
+**Cuentas**
+```
+Aportado           Σ aportaciones
+Retirado           Σ retiradas
+Aportado neto      aportado − retirado
+Valor actual       última valoración + aportado − retirado desde esa fecha
+Ganancia/pérdida   valor actual + retirado + dividendos cobrados − aportado − comisiones pagadas aparte
+```
+
+**Relación con el presupuesto**
+- **Aportación periódica** (p. ej. 100 €/mes al fondo): un recurrente de tipo inversión. Se paga
+  desde "Pagos del mes" como los demás, y al pagarlo se crea la aportación.
+- **Aportación esporádica**: desde Inversiones, eligiendo de dónde sale el dinero: del mes
+  (resta del disponible) o de una hucha (p. ej. Ahorro).
+- **Retirada**: el dinero va al mes (como ingreso) o a una hucha.
+- Las aportaciones cuentan como **ahorro** en el medidor de reparto.
+
+**Tareas**
+- [x] Modelo de datos y cálculo en `packages/shared` (aportado, valor, ganancia, reparto) con tests
+- [x] API: cuentas, activos, operaciones y valoraciones, con los mismos permisos por ámbito
+- [x] Pantalla **Inversiones**: total de la cartera, ganancia/pérdida (€ y %) y lista por cuenta y activo
+- [x] Alta rápida de aportación, retirada, dividendo, comisión y valoración
+- [ ] Recurrente de tipo inversión para las aportaciones periódicas
+- [x] Aportaciones y retiradas conectadas con el mes y con las huchas
+- [x] Aportaciones dentro del medidor de reparto (ahorro): no son necesidades ni deseos, así que cuentan solas como ahorro
+- [x] **Reparto de la cartera** por clase de activo, región, cuenta y activo
+- [ ] Evolución mes a mes: aportado frente a valor
+- [ ] Aviso al cerrar el mes si hay valoraciones sin actualizar
+
+**Decidido al implementarlo**
+- Participaciones como entero × 10⁸ (8 decimales, suficiente para cripto), igual que el dinero va en
+  céntimos, para no usar `float`. Son opcionales.
+- Se valora por valor total (sirve para cualquier producto, también depósitos).
+- Dividendos reinvertidos y comisiones descontadas dentro de la inversión ya están en el valor:
+  se apuntan solo como información, no cambian la ganancia.
+
+**Por decidir**
+- Si el reparto del extra puede enviar dinero directamente a una inversión.
+
+> No es contabilidad fiscal: las plusvalías (FIFO), los traspasos entre fondos y la declaración
+> quedan fuera, al menos por ahora.
+
+### Multiusuario (M)
+Objetivo: que otras personas usen la app, cada una con sus datos. Rama `feature/multiusuario`.
+Detalle del login y del despliegue en el repo `homelab`.
+
+- [x] Tablas `users` y `ledger_members` con roles (`owner` / `editor` / `viewer`)
+- [x] Mis datos existentes asignados a un usuario provisional (`local:owner`)
+- [x] Usuario actual en cada petición (de momento el de desarrollo, `DEV_USER_SUB`); en producción
+      la API no arranca sin login real
+- [x] Alta automática en el primer acceso, con su ámbito Personal, categorías y huchas
+- [x] Permisos: ámbito ajeno → 404, `viewer` escribiendo → 403; `/ledgers` solo devuelve los tuyos
+- [x] Tests de permisos y de escrituras concurrentes
+- [ ] Login real con el IdP (OIDC), sesiones y botón de cerrar sesión
+- [ ] Enlazar `local:owner` con mi usuario real del IdP
+- [ ] Selector de ámbito en la web (para ámbitos compartidos)
+- [ ] La web oculta los botones de editar a un `viewer`
 
 ### Fase 5 — Comodidad y despliegue
 - [ ] PWA instalable en el móvil
@@ -147,6 +215,7 @@ Objetivo: controlar el dinero de la SL sin mezclarlo con el personal.
 
 ### Más adelante
 - Importar CSV del banco
+- Inversiones: precios automáticos (API de cotizaciones), rentabilidad anualizada (TIR) y
+  plusvalías con criterio FIFO para la declaración
 - Estadísticas de gasto impulsivo
 - Proyección anual (meses con/sin dietas, pagas extra)
-- Login simple si alguna vez se accede fuera de Tailscale

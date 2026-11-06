@@ -242,6 +242,9 @@ export const movementRoutes = new Hono<LedgerEnv>()
       .from(bucketMovements)
       .where(and(eq(bucketMovements.id, paramId(c)), eq(bucketMovements.ledgerId, ledgerId)));
     if (!movement) notFound('Movimiento');
+    if (movement.kind === 'investment') {
+      throw new HttpError(400, 'Este movimiento es de una inversión: bórralo desde Inversiones');
+    }
     if (!['initial', 'manual', 'transfer'].includes(movement.kind)) {
       throw new HttpError(400, 'Este movimiento es del cierre de un mes: reabre el mes para deshacerlo');
     }

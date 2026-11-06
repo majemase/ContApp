@@ -39,6 +39,8 @@ export const recurringExpenses = sqliteTable('recurring_expenses', {
   startDate: text('start_date').notNull(),
   endDate: text('end_date'),
   notes: text('notes').notNull().default(''),
+  /** Solo en recurrentes de tipo inversión (aportación periódica): el activo al que se aporta. */
+  investmentAssetId: integer('investment_asset_id').references(() => investmentAssets.id, { onDelete: 'set null' }),
   createdAt: createdAt(),
 });
 
@@ -143,7 +145,7 @@ export const bucketMovements = sqliteTable(
     date: text('date').notNull(),
     month: text('month'),
     kind: text('kind', {
-      enum: ['initial', 'manual', 'transfer', 'savings', 'provision', 'provision_payment', 'extra', 'leftover', 'cover'],
+      enum: ['initial', 'manual', 'transfer', 'investment', 'savings', 'provision', 'provision_payment', 'extra', 'leftover', 'cover'],
     }).notNull(),
     affectsBudget: integer('affects_budget', { mode: 'boolean' }).notNull().default(false),
     note: text('note').notNull().default(''),
@@ -196,4 +198,92 @@ export const ledgerMembers = sqliteTable(
     primaryKey({ columns: [t.userId, t.ledgerId] }),
     index('ledger_members_ledger').on(t.ledgerId),
   ],
+);
+
+// ---- Inversiones ----
+
+/** Dónde está invertido el dinero: un bróker, una gestora, un exchange… */
+export const investmentAccounts = sqliteTable('investment_accounts', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  ledgerId: integer('ledger_id')
+    .notNull()
+    .references(() => ledgers.id),
+  name: text('name').notNull(),
+  archived: integer('archived', { mode: 'boolean' }).notNull().default(false),
+  createdAt: createdAt(),
+});
+
+/** Lo que hay dentro de una cuenta: un fondo, un ETF, una acción… */
+export const investmentAssets = sqliteTable(
+  'investment_assets',
+  {
+    id: integer('id').primaryKey({ autoIncrement: true }),
+    ledgerId: integer('ledger_id')
+      .notNull()
+      .references(() => ledgers.id),
+    accountId: integer('account_id')
+      .notNull()
+      .references(() => investmentAccounts.id),
+    name: text('name').notNull(),
+    ticker: text('ticker').notNull().default(''),
+    type: text('type', {
+      enum: ['index_fund', 'fund', 'etf', 'stock', 'crypto', 'pension', 'deposit', 'other'],
+    }).notNull(),
+    assetClass: text('asset_class', { enum: ['equity', 'fixed_income', 'money_market', 'crypto', 'other'] }).notNull(),
+    region: text('region', { enum: ['global', 'us', 'europe', 'spain', 'emerging', 'other'] }).notNull(),
+    archived: integer('archived', { mode: 'boolean' }).notNull().default(false),
+    createdAt: createdAt(),
+  },
+  (t) => [index('investment_assets_account').on(t.accountId)],
+);
+
+/** Aportaciones, retiradas, dividendos y comisiones. */
+export const investmentOperations = sqliteTable(
+  'investment_operations',
+  {
+    id: integer('id').primaryKey({ autoIncrement: true }),
+    ledgerId: integer('ledger_id')
+      .notNull()
+      .references(() => ledgers.id),
+    assetId: integer('asset_id')
+      .notNull()
+      .references(() => investmentAssets.id),
+    date: text('date').notNull(),
+    kind: text('kind', { enum: ['contribution', 'withdrawal', 'dividend', 'fee'] }).notNull(),
+    /** Siempre positivo; el sentido lo da `kind`. */
+    amountCents: integer('amount_cents').notNull(),
+    /** Participaciones × 10⁸ (opcional). */
+    units: integer('units'),
+    source: text('source', { enum: ['month', 'bucket', 'none'] }).notNull(),
+    /** Si el dinero sale o va a una hucha: el movimiento que se creó en ella. */
+    bucketMovementId: integer('bucket_movement_id').references(() => bucketMovements.id),
+    /** Si la generó una aportación periódica. */
+    recurringExpenseId: integer('recurring_expense_id').references(() => recurringExpenses.id, {
+      onDelete: 'set null',
+    }),
+    note: text('note').notNull().default(''),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    index('investment_operations_asset').on(t.assetId),
+    index('investment_operations_ledger_date').on(t.ledgerId, t.date),
+  ],
+);
+
+/** Valor total de un activo en una fecha, apuntado a mano. */
+export const investmentValuations = sqliteTable(
+  'investment_valuations',
+  {
+    id: integer('id').primaryKey({ autoIncrement: true }),
+    ledgerId: integer('ledger_id')
+      .notNull()
+      .references(() => ledgers.id),
+    assetId: integer('asset_id')
+      .notNull()
+      .references(() => investmentAssets.id, { onDelete: 'cascade' }),
+    date: text('date').notNull(),
+    valueCents: integer('value_cents').notNull(),
+    createdAt: createdAt(),
+  },
+  (t) => [uniqueIndex('investment_valuations_asset_date').on(t.assetId, t.date)],
 );

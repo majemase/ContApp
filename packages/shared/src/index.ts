@@ -4,3 +4,4 @@ export * from './recurring.ts';
 export * from './schemas.ts';
 export * from './budget.ts';
 export * from './closing.ts';
+export * from './investments.ts';

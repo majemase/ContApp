@@ -14,6 +14,15 @@ import type {
   ExpenseInput,
   Income,
   IncomeInput,
+  InvestmentAccount,
+  InvestmentAccountInput,
+  InvestmentAsset,
+  InvestmentAssetInput,
+  InvestmentOperation,
+  InvestmentOperationInput,
+  InvestmentValuation,
+  InvestmentValuationInput,
+  InvestmentsData,
   Ledger,
   RecurringCreateInput,
   RecurringExpense,
@@ -352,5 +361,114 @@ export function useReopenMonth() {
   return useLedgerMutation(
     (l, month: string) => request<void>(`/ledgers/${l}/months/${month}/close`, { method: 'DELETE' }),
     (l) => [...afterMovement(l), [...bucketKeys.months(l)]],
+  );
+}
+
+// ---- Inversiones ----
+
+const investmentKey = (ledgerId: number) => ['ledger', ledgerId, 'investments'] as const;
+/** Una operación puede mover dinero de una hucha: se refrescan también las huchas. */
+const afterInvestment = (l: number) => [[...investmentKey(l)], ...afterMovement(l)];
+
+/** Cuentas, activos, operaciones y valoraciones del ámbito (lo usan la página y el presupuesto). */
+export function useInvestments() {
+  const ledgerId = useLedgerId();
+  return useQuery({
+    queryKey: investmentKey(ledgerId),
+    queryFn: () => request<InvestmentsData>(`/ledgers/${ledgerId}/investments`),
+  });
+}
+
+export function useCreateInvestmentAccount() {
+  return useLedgerMutation(
+    (l, input: InvestmentAccountInput) =>
+      request<InvestmentAccount>(`/ledgers/${l}/investments/accounts`, { method: 'POST', body: input }),
+    (l) => [[...investmentKey(l)]],
+  );
+}
+
+export function useUpdateInvestmentAccount() {
+  return useLedgerMutation(
+    (l, { id, ...input }: InvestmentAccountInput & { id: number }) =>
+      request<InvestmentAccount>(`/ledgers/${l}/investments/accounts/${id}`, { method: 'PUT', body: input }),
+    (l) => [[...investmentKey(l)]],
+  );
+}
+
+export function useDeleteInvestmentAccount() {
+  return useLedgerMutation(
+    (l, id: number) =>
+      request<{ archived: boolean }>(`/ledgers/${l}/investments/accounts/${id}`, { method: 'DELETE' }),
+    (l) => [[...investmentKey(l)]],
+  );
+}
+
+export function useRestoreInvestmentAccount() {
+  return useLedgerMutation(
+    (l, id: number) =>
+      request<InvestmentAccount>(`/ledgers/${l}/investments/accounts/${id}/restore`, { method: 'POST' }),
+    (l) => [[...investmentKey(l)]],
+  );
+}
+
+export function useCreateInvestmentAsset() {
+  return useLedgerMutation(
+    (l, input: InvestmentAssetInput) =>
+      request<InvestmentAsset>(`/ledgers/${l}/investments/assets`, { method: 'POST', body: input }),
+    (l) => [[...investmentKey(l)]],
+  );
+}
+
+export function useUpdateInvestmentAsset() {
+  return useLedgerMutation(
+    (l, { id, ...input }: InvestmentAssetInput & { id: number }) =>
+      request<InvestmentAsset>(`/ledgers/${l}/investments/assets/${id}`, { method: 'PUT', body: input }),
+    (l) => [[...investmentKey(l)]],
+  );
+}
+
+export function useDeleteInvestmentAsset() {
+  return useLedgerMutation(
+    (l, id: number) =>
+      request<{ archived: boolean }>(`/ledgers/${l}/investments/assets/${id}`, { method: 'DELETE' }),
+    (l) => [[...investmentKey(l)]],
+  );
+}
+
+export function useRestoreInvestmentAsset() {
+  return useLedgerMutation(
+    (l, id: number) =>
+      request<InvestmentAsset>(`/ledgers/${l}/investments/assets/${id}/restore`, { method: 'POST' }),
+    (l) => [[...investmentKey(l)]],
+  );
+}
+
+export function useCreateInvestmentOperation() {
+  return useLedgerMutation(
+    (l, input: InvestmentOperationInput) =>
+      request<InvestmentOperation>(`/ledgers/${l}/investments/operations`, { method: 'POST', body: input }),
+    afterInvestment,
+  );
+}
+
+export function useDeleteInvestmentOperation() {
+  return useLedgerMutation(
+    (l, id: number) => request<void>(`/ledgers/${l}/investments/operations/${id}`, { method: 'DELETE' }),
+    afterInvestment,
+  );
+}
+
+export function useSaveInvestmentValuation() {
+  return useLedgerMutation(
+    (l, input: InvestmentValuationInput) =>
+      request<InvestmentValuation>(`/ledgers/${l}/investments/valuations`, { method: 'POST', body: input }),
+    (l) => [[...investmentKey(l)]],
+  );
+}
+
+export function useDeleteInvestmentValuation() {
+  return useLedgerMutation(
+    (l, id: number) => request<void>(`/ledgers/${l}/investments/valuations/${id}`, { method: 'DELETE' }),
+    (l) => [[...investmentKey(l)]],
   );
 }

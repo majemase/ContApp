@@ -9,6 +9,7 @@ import { bucketRoutes, movementRoutes } from './routes/buckets.ts';
 import { categoryRoutes } from './routes/categories.ts';
 import { expenseRoutes } from './routes/expenses.ts';
 import { incomeRoutes } from './routes/incomes.ts';
+import { investmentRoutes } from './routes/investments.ts';
 import { monthRoutes } from './routes/months.ts';
 import { recurringRoutes } from './routes/recurring.ts';
 import { settingsRoutes } from './routes/settings.ts';
@@ -43,7 +44,8 @@ const ledgerScoped = new Hono<LedgerEnv>()
   .route('/settings', settingsRoutes)
   .route('/buckets', bucketRoutes)
   .route('/movements', movementRoutes)
-  .route('/months', monthRoutes);
+  .route('/months', monthRoutes)
+  .route('/investments', investmentRoutes);
 
 const api = new Hono<AuthEnv>()
   .get('/health', (c) => c.json({ ok: true }))

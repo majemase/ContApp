@@ -6,6 +6,7 @@ const NAV = [
   { to: '/gastos', label: 'Gastos', icon: '💸', end: false },
   { to: '/ingresos', label: 'Ingresos', icon: '💰', end: false },
   { to: '/huchas', label: 'Huchas', icon: '🐷', end: false },
+  { to: '/inversiones', label: 'Inversión', icon: '📈', end: false },
   { to: '/ajustes', label: 'Ajustes', icon: '⚙️', end: false },
 ];
 

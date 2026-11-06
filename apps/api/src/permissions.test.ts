@@ -1,23 +1,12 @@
 import { eq } from 'drizzle-orm';
 import { afterEach, beforeAll, describe, expect, it } from 'vitest';
 import type { Ledger, LedgerRole } from '@contapp/shared';
-import { app } from './app.ts';
+import { as } from '../test/helpers.ts';
 import { db, initDb } from './db/client.ts';
 import { categories, ledgerMembers, users } from './db/schema.ts';
 import { findOrCreateUser } from './users.ts';
 
 // Juan y Manuel tienen cada uno su Personal. Manuel comparte el suyo con Ana (viewer) y Eva (editor).
-
-/** Hace la petición como el usuario con ese sub (sin sub = sin sesión). */
-async function as(sub: string | null, path: string, init?: { method?: string; body?: unknown }) {
-  if (sub === null) delete process.env.DEV_USER_SUB;
-  else process.env.DEV_USER_SUB = sub;
-  return app.request(`/api${path}`, {
-    method: init?.method ?? 'GET',
-    headers: init?.body !== undefined ? { 'content-type': 'application/json' } : undefined,
-    body: init?.body !== undefined ? JSON.stringify(init.body) : undefined,
-  });
-}
 
 async function ledgersOf(sub: string): Promise<Ledger[]> {
   return (await as(sub, '/ledgers')).json() as Promise<Ledger[]>;

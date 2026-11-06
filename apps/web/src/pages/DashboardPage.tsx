@@ -554,6 +554,12 @@ function Breakdown({ budget }: { budget: MonthBudget }) {
         {spent.toBuckets !== 0 && (
           <Line label={spent.toBuckets > 0 ? 'Metido en huchas' : 'Sacado de huchas'} value={-spent.toBuckets} />
         )}
+        {spent.toInvestments !== 0 && (
+          <Line
+            label={spent.toInvestments > 0 ? 'Llevado a inversiones' : 'Traído de inversiones'}
+            value={-spent.toInvestments}
+          />
+        )}
         <Line label="Queda" value={remaining} strong />
         {variableSurplus > 0 && (
           <>

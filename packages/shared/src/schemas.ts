@@ -285,12 +285,15 @@ export interface Bucket {
  * - initial: saldo inicial (dinero que ya tenías ahorrado). No afecta al mes.
  * - manual: meter/sacar dinero. Si `affectsBudget`, sale de / vuelve a lo disponible del mes.
  * - transfer: de una hucha a otra (dos movimientos). No afecta al mes.
+ * - investment: dinero que sale de la hucha hacia una inversión (−) o vuelve de ella (+).
+ *   Lo crea la operación de inversión y se borra con ella.
  * - Generados al cerrar un mes: savings, provision, provision_payment, extra, leftover, cover.
  */
 export const MOVEMENT_KINDS = [
   'initial',
   'manual',
   'transfer',
+  'investment',
   'savings',
   'provision',
   'provision_payment',
@@ -307,6 +310,7 @@ export const MOVEMENT_KIND_LABELS: Record<MovementKind, string> = {
   initial: 'Saldo inicial',
   manual: 'Movimiento',
   transfer: 'Traspaso',
+  investment: 'Inversión',
   savings: 'Ahorro del mes',
   provision: 'Apartado de provisión',
   provision_payment: 'Pago de provisión',
