@@ -47,11 +47,19 @@ const ledgerScoped = new Hono<LedgerEnv>()
   .route('/months', monthRoutes)
   .route('/investments', investmentRoutes);
 
+/**
+ * Las únicas rutas de la API que funcionan sin sesión (ruta completa, con /api).
+ * Todo lo demás exige usuario, también las rutas que se añadan en el futuro y las que no
+ * existen (401 antes que 404: a quien no ha iniciado sesión no le decimos qué rutas hay).
+ * Añadir aquí una ruta es una decisión de seguridad: el test de app.test.ts lo vigila.
+ */
+export const PUBLIC_API_PATHS: ReadonlySet<string> = new Set([
+  '/api/health', // healthcheck del contenedor
+]);
+
 const api = new Hono<AuthEnv>()
+  .use((c, next) => (PUBLIC_API_PATHS.has(c.req.path) ? next() : currentUser(c, next)))
   .get('/health', (c) => c.json({ ok: true }))
-  // Todo lo demás necesita saber quién eres. /health no: lo usa el healthcheck, sin sesión.
-  // En Hono, '/ledgers/*' incluye también '/ledgers'.
-  .use('/ledgers/*', currentUser)
   // Solo los ámbitos de los que eres miembro, con tu rol en cada uno.
   .get('/ledgers', async (c) => {
     const rows = await db
