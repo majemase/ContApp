@@ -50,7 +50,7 @@ describe('toda la API exige sesión salvo la lista de rutas públicas', () => {
 
   it('las rutas públicas son exactamente las esperadas', () => {
     // Si este test falla porque has añadido una ruta pública, asegúrate de que debe serlo.
-    expect([...PUBLIC_API_PATHS]).toEqual(['/api/health']);
+    expect([...PUBLIC_API_PATHS]).toEqual(['/api/health', '/api/auth/login', '/api/auth/callback', '/api/auth/logout']);
   });
 
   it.each(routes.filter((r) => !PUBLIC_API_PATHS.has(r.path)))('$method $path → 401 sin sesión', async ({ method, path }) => {

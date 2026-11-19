@@ -57,6 +57,13 @@
       "when": 1793958630579,
       "tag": "0007_inversiones",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "6",
+      "when": 1795079068137,
+      "tag": "0008_sesiones",
+      "breakpoints": true
     }
   ]
 }

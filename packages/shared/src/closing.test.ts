@@ -83,14 +83,16 @@ const input = (over: Partial<BudgetInput> = {}): BudgetInput => ({
 const close = (i: BudgetInput, leftover = AHORRO, cover = COLCHON) =>
   proposeClose({ budget: computeMonthBudget(i), settings: i.settings, buckets: BUCKETS, leftoverBucketId: leftover, coverBucketId: cover });
 
-/** Todo lo cobrado acaba gastado o en una hucha. */
+/** Todo lo cobrado acaba gastado, en una hucha o invertido (y lo retirado de una inversión, también). */
 function expectMoneyBalances(i: BudgetInput) {
   const { movements } = close(i);
-  const intoBuckets = movements.reduce((s, m) => s + m.amountCents, 0);
-  const manual = (i.budgetMovements ?? []).reduce((s, m) => s + m.amountCents, 0);
-  const income = i.incomes.reduce((s, x) => s + x.amountCents, 0);
-  const spent = i.expenses.reduce((s, e) => s + e.amountCents, 0);
-  expect(intoBuckets + manual).toBe(income - spent);
+  const sum = (xs: { amountCents: number }[] = []) => xs.reduce((s, x) => s + x.amountCents, 0);
+  const intoBuckets = sum(movements);
+  const manual = sum(i.budgetMovements);
+  const invested = sum(i.investmentFlows); // aportado desde el mes − retirado hacia el mes
+  const income = sum(i.incomes);
+  const spent = sum(i.expenses);
+  expect(intoBuckets + manual + invested).toBe(income - spent);
 }
 
 describe('parte libre del extra', () => {
@@ -179,6 +181,27 @@ describe('proposeClose', () => {
       expectMoneyBalances(input({ budgetMovements: [{ amountCents: 5000 }, { amountCents: -20000 }] })));
     it('sin referencia', () =>
       expectMoneyBalances(input({ settings: { ...SETTINGS, referenceIncomeCents: null } })));
+    it('con una aportación a una inversión desde el mes', () =>
+      expectMoneyBalances(input({ investmentFlows: [{ amountCents: 10000 }] })));
+    it('con una retirada de una inversión hacia el mes', () =>
+      expectMoneyBalances(input({ investmentFlows: [{ amountCents: -30000 }] })));
+    it('con aportaciones, retiradas y huchas a la vez', () =>
+      expectMoneyBalances(
+        input({ investmentFlows: [{ amountCents: 15000 }, { amountCents: -4000 }], budgetMovements: [{ amountCents: 5000 }] }),
+      ));
+    it('si una aportación deja el mes en negativo, el exceso se cubre desde una hucha', () => {
+      const i = input({ investmentFlows: [{ amountCents: 80000 }] });
+      expect(close(i).movements.some((m) => m.kind === 'cover')).toBe(true);
+      expectMoneyBalances(i);
+    });
+    it('mes malo con una aportación', () =>
+      expectMoneyBalances(input({ incomes: [{ amountCents: 95000 }], investmentFlows: [{ amountCents: 10000 }] })));
+  });
+
+  it('una aportación desde el mes reduce lo que queda; una retirada lo aumenta', () => {
+    const base = computeMonthBudget(input()).remaining;
+    expect(computeMonthBudget(input({ investmentFlows: [{ amountCents: 10000 }] })).remaining).toBe(base - 10000);
+    expect(computeMonthBudget(input({ investmentFlows: [{ amountCents: -10000 }] })).remaining).toBe(base + 10000);
   });
 });
 

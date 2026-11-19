@@ -183,6 +183,24 @@ export const users = sqliteTable('users', {
   createdAt: createdAt(),
 });
 
+/**
+ * Sesiones abiertas tras el login con el IdP. La cookie lleva un token aleatorio y aquí solo se
+ * guarda su hash: quien lea la BD (o una copia) no puede usarlo para entrar.
+ * Fechas en milisegundos (Date.now()) para comparar caducidades sin conversiones.
+ */
+export const sessions = sqliteTable(
+  'sessions',
+  {
+    tokenHash: text('token_hash').primaryKey(),
+    userId: integer('user_id')
+      .references(() => users.id, { onDelete: 'cascade' })
+      .notNull(),
+    createdAt: integer('created_at').notNull(),
+    lastSeenAt: integer('last_seen_at').notNull(),
+  },
+  (t) => [index('sessions_user').on(t.userId)],
+);
+
 export const ledgerMembers = sqliteTable(
   'ledger_members',
   {

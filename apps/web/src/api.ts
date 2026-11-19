@@ -52,6 +52,28 @@ async function request<T>(path: string, init?: { method?: string; body?: unknown
   return data as T;
 }
 
+// ---- Sesión ----
+
+export interface Me {
+  name: string | null;
+  email: string | null;
+  /** false en desarrollo sin IdP (usuario de DEV_USER_SUB): no hay sesión que cerrar. */
+  loginEnabled: boolean;
+}
+
+export const meKey = ['me'] as const;
+
+export function useMe() {
+  // Sin reintentos: un 401 significa "sin sesión", no un fallo pasajero.
+  return useQuery({ queryKey: meKey, queryFn: () => request<Me>('/me'), retry: false });
+}
+
+/** Cierra la sesión y recarga: se descarta todo lo que había en memoria y aparece el login. */
+export async function logout() {
+  await request<void>('/auth/logout', { method: 'POST' });
+  window.location.assign('/');
+}
+
 // ---- Ámbitos ----
 
 export function useLedgers() {

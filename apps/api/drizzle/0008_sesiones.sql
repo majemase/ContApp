@@ -1,0 +1,9 @@
+CREATE TABLE `sessions` (
+	`token_hash` text PRIMARY KEY NOT NULL,
+	`user_id` integer NOT NULL,
+	`created_at` integer NOT NULL,
+	`last_seen_at` integer NOT NULL,
+	FOREIGN KEY (`user_id`) REFERENCES `users`(`id`) ON UPDATE no action ON DELETE cascade
+);
+--> statement-breakpoint
+CREATE INDEX `sessions_user` ON `sessions` (`user_id`);

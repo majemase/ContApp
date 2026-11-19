@@ -202,8 +202,12 @@ Detalle del login y del despliegue en el repo `homelab`.
 - [x] Alta automática en el primer acceso, con su ámbito Personal, categorías y huchas
 - [x] Permisos: ámbito ajeno → 404, `viewer` escribiendo → 403; `/ledgers` solo devuelve los tuyos
 - [x] Tests de permisos y de escrituras concurrentes
-- [ ] Login real con el IdP (OIDC), sesiones y botón de cerrar sesión
-- [ ] Enlazar `local:owner` con mi usuario real del IdP
+- [x] Login real con el IdP (OIDC, código + PKCE, cliente confidencial), sesiones en BD
+      (30 días sin uso, 90 como máximo) y botón de cerrar sesión. Probado con un IdP falso en
+      los tests y de punta a punta con Vite
+- [ ] Probarlo contra Pocket ID de verdad (en local, `homelab/idp/dev`)
+- [ ] Enlazar `local:owner` con mi usuario real del IdP: script listo
+      (`pnpm --filter @contapp/api link-owner <sub>`), falta ejecutarlo antes de mi primer login
 - [ ] Selector de ámbito en la web (para ámbitos compartidos)
 - [ ] La web oculta los botones de editar a un `viewer`
 

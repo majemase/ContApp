@@ -14,9 +14,10 @@ import {
   monthlySavings,
   parseEuros,
 } from '@contapp/shared';
-import { useBuckets, useRecurring, useSettings, useUpdateSettings } from '../api';
+import { logout, useBuckets, useRecurring, useSettings, useUpdateSettings } from '../api';
 import { useToast } from '../components/feedback';
 import { Button, Card, EmptyState, ErrorText, Field, Input, MoneyInput, PageHeader, Select, cx } from '../components/ui';
+import { useSession } from '../session';
 
 export function SettingsPage() {
   const query = useSettings();
@@ -31,6 +32,8 @@ export function SettingsPage() {
         <NavRow to="/ajustes/recurrentes" icon="🔁" label="Gastos recurrentes" hint="Casa, seguros, cuota, presupuestos…" />
         <NavRow to="/ajustes/categorias" icon="🏷️" label="Categorías" />
       </Card>
+
+      <AccountCard />
 
       {query.isPending || buckets.isPending ? (
         <EmptyState>Cargando…</EmptyState>
@@ -75,6 +78,38 @@ function NavRow({ to, icon, label, hint }: { to: string; icon: string; label: st
       </span>
       <span className="text-slate-400">›</span>
     </Link>
+  );
+}
+
+/** Quién ha iniciado sesión y el botón para salir. Sin IdP (desarrollo) no hay sesión que cerrar. */
+function AccountCard() {
+  const me = useSession();
+  const [error, setError] = useState<unknown>(null);
+  const [leaving, setLeaving] = useState(false);
+  if (!me.loginEnabled) return null;
+
+  const onLogout = async () => {
+    setLeaving(true);
+    setError(null);
+    try {
+      await logout();
+    } catch (err) {
+      setError(err);
+      setLeaving(false);
+    }
+  };
+
+  return (
+    <Card className="flex items-center gap-3">
+      <span className="min-w-0 flex-1">
+        <span className="block truncate font-medium">{me.name ?? 'Tu cuenta'}</span>
+        {me.email && <span className="block truncate text-xs text-slate-500 dark:text-slate-400">{me.email}</span>}
+        <ErrorText error={error} />
+      </span>
+      <Button variant="secondary" onClick={onLogout} disabled={leaving}>
+        {leaving ? 'Cerrando…' : 'Cerrar sesión'}
+      </Button>
+    </Card>
   );
 }
 

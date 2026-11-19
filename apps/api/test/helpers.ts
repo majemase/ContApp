@@ -6,7 +6,11 @@ export async function as(sub: string | null, path: string, init?: { method?: str
   else process.env.DEV_USER_SUB = sub;
   return app.request(`/api${path}`, {
     method: init?.method ?? 'GET',
-    headers: init?.body !== undefined ? { 'content-type': 'application/json' } : undefined,
+    // Como un navegador desde la propia web (lo comprueba el middleware csrf).
+    headers: {
+      'sec-fetch-site': 'same-origin',
+      ...(init?.body !== undefined ? { 'content-type': 'application/json' } : {}),
+    },
     body: init?.body !== undefined ? JSON.stringify(init.body) : undefined,
   });
 }
